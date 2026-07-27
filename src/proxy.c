@@ -280,7 +280,19 @@ int proxy_serve_ctl(int lfd, X509 *root, EVP_PKEY *rootkey,
             if (poll(&pfd, 1, 500) <= 0) { if (*stop) break; continue; }
         }
         int cfd = accept(lfd, NULL, NULL);
-        if (cfd < 0) { if (errno == EINTR) continue; break; }
+        if (cfd < 0) {
+            /* A transient accept failure must not kill the loop. ECONNABORTED
+             * is routine (a queued client reset before we accepted — a PAC
+             * toggle's browser churn produces bursts of these) and EMFILE/
+             * ENFILE are fd-pressure spikes that pass. Exiting here leaves
+             * the bound listener open with nobody accepting: the port still
+             * looks alive while every dial dies in its backlog (the desktop
+             * front door then answers every CONNECT with 502 until the app
+             * restarts). Break only when the listener itself is gone. */
+            if (errno == EBADF || errno == EINVAL || errno == ENOTSOCK) break;
+            if (errno == EMFILE || errno == ENFILE) poll(NULL, 0, 100);
+            continue;
+        }
         struct conn *c = malloc(sizeof *c);
         if (!c) { close(cfd); continue; }
         c->px = px;

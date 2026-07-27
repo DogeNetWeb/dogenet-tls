@@ -324,6 +324,35 @@ int main(void) {
         close(cfd2);
     }
 
+    /* 5. ABORT STORM — connections that reset while queued must not kill the
+     * accept loop. SO_LINGER{1,0} close() sends an RST; an RST that lands
+     * before accept() surfaces as ECONNABORTED, which the loop used to treat
+     * as fatal: the listener stayed bound (the port LOOKS alive) while every
+     * later dial died in its backlog — the desktop front door then answered
+     * every CONNECT with 502 until an app restart. Whether the kernel
+     * actually surfaces ECONNABORTED is timing/OS-dependent, so this is a
+     * probabilistic net, not a proof — but under the old code one surfaced
+     * abort here fails the follow-up fetch. */
+    printf("── abort storm: acceptor survives resets ──\n");
+    {
+        for (int i = 0; i < 50; i++) {
+            int afd = socket(AF_INET, SOCK_STREAM, 0);
+            if (afd < 0) continue;
+            struct sockaddr_in aa; memset(&aa, 0, sizeof aa);
+            aa.sin_family = AF_INET;
+            aa.sin_port = htons((uint16_t)pport);
+            inet_pton(AF_INET, "127.0.0.1", &aa.sin_addr);
+            if (connect(afd, (struct sockaddr *)&aa, sizeof aa) == 0) {
+                struct linger lg = { 1, 0 };          /* close() → RST */
+                setsockopt(afd, SOL_SOCKET, SO_LINGER, &lg, sizeof lg);
+            }
+            close(afd);
+        }
+        int v5 = browser_get("127.0.0.1", pport, "www.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (v5 && strstr(body, ORIGIN_BODY)) ok("acceptor alive after 50 aborted connections");
+        else bad("abort storm killed the accept loop (dead listener, 502-forever)");
+    }
+
     printf("\n%d ok, %d failed\n", pass, fail);
     return fail == 0 ? 0 : 1;
 }
