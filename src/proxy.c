@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,10 +71,45 @@ static void serve_status(SSL *b, int code, const char *title, const char *detail
         "Content-Length: %d\r\nConnection: close\r\n\r\n%s",
         code, title, bl, body);
     SSL_write(b, resp, rl);
+
+    /* Drain whatever the browser already sent before we close.
+     *
+     * We answer these pages without ever reading the request, so the client's
+     * GET is still sitting unread in our receive queue. On BSD/macOS, close()
+     * on a socket with unread received data sends a TCP RST rather than a FIN,
+     * and an RST makes the peer's kernel discard ITS receive buffer — including
+     * the page we just wrote into it. The browser then shows a connection reset
+     * instead of the diagnostic, which matters most on the 502 path: that IS
+     * the fail-closed explanation of why the site was blocked.
+     *
+     * Bounded two ways so a silent or hostile peer cannot pin this thread: a
+     * short receive timeout (we are closing regardless, so a slow client only
+     * costs the timeout) and a cap on how much we are willing to swallow. */
+    int fd = SSL_get_fd(b);
+    if (fd >= 0) {
+        struct timeval tv = { 0, 250000 };            /* 250 ms */
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    }
+    char sink[4096];
+    for (size_t drained = 0; drained < 64 * 1024; ) {
+        int n = SSL_read(b, sink, sizeof sink);
+        if (n <= 0) break;                            /* EOF, timeout, or error */
+        drained += (size_t)n;
+    }
 }
 
 /* Move any readable+decryptable data from `from` to `to`. 1 = keep going,
- * 0 = this direction is done (peer closed or hard error). */
+ * 0 = this direction is done (peer closed or hard error).
+ *
+ * The loop condition must be SSL_has_pending(), not SSL_pending() alone.
+ * SSL_pending() reports only the decrypted bytes left in the record OpenSSL has
+ * ALREADY processed; it says nothing about further whole records OpenSSL has
+ * read off the socket into its own buffer but not yet unwrapped. When a request
+ * spans several records — every POST, every upload, and TLS 1.3 routinely —
+ * SSL_pending() goes to 0 with data still buffered, splice() returns to
+ * select(), and the kernel reports the socket as empty because those bytes are
+ * inside OpenSSL rather than the receive queue. The connection then blocks
+ * forever, leaking a thread and two fds. SSL_has_pending() covers both cases. */
 static int pump(SSL *from, SSL *to) {
     do {
         char buf[16384];
@@ -86,27 +122,76 @@ static int pump(SSL *from, SSL *to) {
             int w = SSL_write(to, buf + off, n - off);
             if (w <= 0) {
                 int e = SSL_get_error(to, w);
-                if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) continue;
-                return 0;
+                if (e != SSL_ERROR_WANT_READ && e != SSL_ERROR_WANT_WRITE) return 0;
+                /* Non-blocking: wait for the far side to be ready rather than
+                 * spinning on it. */
+                struct pollfd wp = { SSL_get_fd(to),
+                                     (short)(e == SSL_ERROR_WANT_READ ? POLLIN : POLLOUT), 0 };
+                if (poll(&wp, 1, -1) <= 0) return 0;
+                continue;
             }
             off += w;
         }
-    } while (SSL_pending(from) > 0);
+    } while (SSL_pending(from) > 0 || SSL_has_pending(from));
     return 1;
+}
+
+/* Does this session hold bytes that select() cannot see? SSL_pending() covers
+ * plaintext already decrypted; SSL_has_pending() also covers whole records read
+ * off the socket but not yet unwrapped. Either way the kernel receive queue is
+ * empty, so select() would report "nothing to read" and block on data we are
+ * already holding. */
+static int buffered(SSL *s) { return SSL_pending(s) > 0 || SSL_has_pending(s); }
+
+/* Bidirectional plaintext relay between the two authenticated TLS sessions.
+ *
+ * The pre-select drain below is load-bearing, not an optimisation. OpenSSL reads
+ * in record-sized gulps, and SSL_accept() itself can pull the client's first
+ * application-data records off the socket while completing the handshake — so a
+ * request can be sitting INSIDE the SSL object before this loop runs even once.
+ * Blocking in select() first would then wait forever on a socket whose bytes we
+ * already have: the browser waits for a response, we wait for a request we are
+ * holding, and the origin waits for the rest of it. Draining what is buffered
+ * before every poll() is what makes the relay safe. */
+static void set_nonblock(int fd) {
+    int fl = fcntl(fd, F_GETFL, 0);
+    if (fl != -1) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
 }
 
 /* Bidirectional plaintext relay between the two authenticated TLS sessions. */
 static void splice(SSL *b, SSL *o) {
     int fb = SSL_get_fd(b), fo = SSL_get_fd(o);
-    int mx = (fb > fo ? fb : fo) + 1;
+
+    /* Both sides must be non-blocking for the relay to be safe.
+     *
+     * select() reporting a socket readable does NOT mean application data is
+     * available: the bytes may be a TLS record that yields none. TLS 1.3 origins
+     * routinely send NewSessionTicket right after the handshake, and a KeyUpdate
+     * or renegotiation can do the same at any time. On a BLOCKING socket,
+     * SSL_read then consumes that record, finds no application data, and blocks
+     * — starving the opposite direction. That is a genuine three-way deadlock:
+     * the browser waits for a response, we wait inside SSL_read on the origin,
+     * and the origin waits for the rest of a request still sitting unread in our
+     * browser socket. It strikes whenever a request spans several records, which
+     * is every POST, every upload, and TLS 1.3 as a matter of course.
+     * Non-blocking turns that block into WANT_READ, which pump() treats as
+     * "nothing more this direction" and returns, so the loop keeps serving both. */
+    set_nonblock(fb);
+    set_nonblock(fo);
     for (;;) {
-        fd_set rf;
-        FD_ZERO(&rf);
-        FD_SET(fb, &rf);
-        FD_SET(fo, &rf);
-        if (select(mx, &rf, NULL, NULL, NULL) <= 0) break;
-        if (FD_ISSET(fb, &rf) && !pump(b, o)) break;
-        if (FD_ISSET(fo, &rf) && !pump(o, b)) break;
+        int moved = 0;
+        if (buffered(b)) { if (!pump(b, o)) break; moved = 1; }
+        if (buffered(o)) { if (!pump(o, b)) break; moved = 1; }
+        if (moved) continue;              /* re-check before trusting poll() */
+
+        /* poll(), not select(): FD_SET on a descriptor >= FD_SETSIZE (1024)
+         * writes past the 128-byte fd_set on this thread's stack, and select()
+         * with nfds > FD_SETSIZE just fails with EINVAL. A busy proxy holds two
+         * fds per tunnel, so that is reachable rather than theoretical. */
+        struct pollfd pf[2] = { { fb, POLLIN, 0 }, { fo, POLLIN, 0 } };
+        if (poll(pf, 2, -1) <= 0) break;
+        if ((pf[0].revents & (POLLIN | POLLHUP | POLLERR)) && !pump(b, o)) break;
+        if ((pf[1].revents & (POLLIN | POLLHUP | POLLERR)) && !pump(o, b)) break;
     }
 }
 

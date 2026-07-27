@@ -31,12 +31,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <errno.h>
 
 static int pass = 0, fail = 0;
 static void ok(const char *m)  { pass++; printf("  ok   %s\n", m); }
 static void bad(const char *m) { fail++; printf("FAIL   %s\n", m); }
 
 static const char *ORIGIN_BODY = "HELLO FROM ORIGIN";
+
+/* Why the last browser read stopped — used only to explain the fail-closed
+ * 404 case below when it trips. */
+static int g_last_ssl_err, g_last_errno;
 
 /* ── shared helpers ──────────────────────────────────────────────────────── */
 
@@ -167,9 +172,19 @@ static int browser_get(const char *ip, int port, const char *sni, X509 *root,
             SSL_write(ssl, req, (int)strlen(req));
             size_t total = 0;
             int n;
-            while (total < bodycap - 1 &&
-                   (n = SSL_read(ssl, body + total, (int)(bodycap - 1 - total))) > 0)
-                total += (size_t)n;
+            for (;;) {
+                if (total >= bodycap - 1) break;
+                errno = 0;
+                n = SSL_read(ssl, body + total, (int)(bodycap - 1 - total));
+                if (n > 0) { total += (size_t)n; continue; }
+                int e = SSL_get_error(ssl, n);
+                /* a signal mid-read is not the end of the body */
+                if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) continue;
+                if (e == SSL_ERROR_SYSCALL && errno == EINTR) continue;
+                g_last_ssl_err = e;              /* kept for the diagnostic below */
+                g_last_errno   = errno;
+                break;
+            }
             body[total] = 0;
         }
     }
@@ -265,7 +280,17 @@ int main(void) {
     if (v3 && strstr(body, "unknown") && !strstr(body, ORIGIN_BODY))
         ok("unknown name: verified leaf + local 404, no origin bytes");
     else { bad("unknown name should serve a local 404");
-           printf("       verified=%d body=%.80s\n", v3, body); }
+           printf("       verified=%d body=%.80s\n", v3, body);
+           printf("       ssl_err=%d errno=%d (%s)\n",
+                  g_last_ssl_err, g_last_errno, strerror(g_last_errno));
+           if (g_last_errno == ECONNRESET)
+               printf("       ^ PRODUCT BUG, not a flaky test: proxy.c:126 writes the 404,\n"
+                      "         then proxy.c:144 close()s the socket with this request still\n"
+                      "         UNREAD in its receive queue. BSD/macOS turns close()-with-unread-\n"
+                      "         data into a TCP RST, and the RST makes the client kernel discard\n"
+                      "         its whole receive buffer -- including the 404 already delivered.\n"
+                      "         No client-side read loop can recover it. See proxy_jitter_test.c\n"
+                      "         (\"fail-closed 404 path\") for the measured rate.\n"); }
 
     /* 4. CTL — a second proxy through proxy_serve_ctl: events fire on mint +
      * verdict, and flipping the stop flag ends the accept loop (join returns). */

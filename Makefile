@@ -74,3 +74,54 @@ clean:
 	rm -f pepenet-tls ca_test dane_test proxy_test origin_test sscert_test
 
 .PHONY: all test clean
+
+# ── deeper suites (slice-by-slice hardening; `all`/`test` above are unchanged) ──
+# These are separate targets on purpose: several of them currently FAIL against
+# real product defects (see the /* FAILS: */ notes in each file), so folding
+# them into `test` would make the existing green suite red for reasons that are
+# not regressions. Run them explicitly.
+
+dane_deep_test: test/dane_deep_test.c src/dane.c
+	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
+
+fetch_test: test/fetch_test.c src/fetch.c
+	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
+
+# resolve_test builds a throwaway indexer db + record store, so it needs the
+# same DNS/mesh link surface the real resolver uses.
+resolve_test: test/resolve_test.c src/resolve.c src/origin.c $(DNSSRC) $(NETLIB)
+	$(CC) $(CFLAGS) -Isrc $(DNSINC) -o $@ test/resolve_test.c src/resolve.c \
+	    src/origin.c $(DNSSRC) $(LDFLAGS) $(DNSLIBS) -lpthread
+
+proxy_jitter_test: test/proxy_jitter_test.c src/proxy.c src/ca.c src/dane.c
+	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
+
+# the three hermetic deep suites
+# runs all three even when one fails, then reports the overall verdict --
+# several of these suites fail against real defects, and stopping at the first
+# would hide the others.
+check-deep: dane_deep_test fetch_test resolve_test
+	@rc=0; for t in dane_deep_test fetch_test resolve_test; do \
+	    echo "── $$t ──"; ./$$t || rc=1; echo; \
+	done; \
+	if [ $$rc -eq 0 ]; then echo "check-deep: all suites passed"; \
+	else echo "check-deep: at least one suite FAILED (see the FAILS: notes)"; fi; \
+	exit $$rc
+
+# the concurrency/abuse suite (~30 s). PEPENET_JITTER_SEED=<n> replays a run.
+check-jitter: proxy_jitter_test
+	./proxy_jitter_test
+
+# ThreadSanitizer build of the jitter suite. -O1 -g so TSan reports carry
+# usable frames; separate binary so the normal one stays optimized.
+proxy_jitter_tsan: test/proxy_jitter_test.c src/proxy.c src/ca.c src/dane.c
+	$(CC) -std=c11 -g -O1 -fsanitize=thread -Wall -Wextra -I$(OPENSSL)/include \
+	    -Isrc -o $@ $^ $(LDFLAGS) -lpthread
+
+check-jitter-tsan: proxy_jitter_tsan
+	TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1 history_size=7" ./proxy_jitter_tsan
+
+clean-deep:
+	rm -f dane_deep_test fetch_test resolve_test proxy_jitter_test proxy_jitter_tsan
+
+.PHONY: check-deep check-jitter check-jitter-tsan clean-deep

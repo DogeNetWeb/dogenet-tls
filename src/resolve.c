@@ -52,6 +52,17 @@ int resolver_resolve(const char *sni, OriginInfo *out, void *ud) {
     if (!origin_split(sni, r->suffix, apex, sizeof apex, sub, sizeof sub))
         return 0;                                   /* pure string work — no lock */
 
+    /* Fold to lowercase before any store lookup. DNS names are case-insensitive,
+     * and every other path already honours that: dns_wire.c lowercases what it
+     * decodes off the wire, dns_state.c keys on case-blind labels, and origin.c
+     * compares with strcasecmp. This path is the odd one out because its name
+     * arrives from the TLS SNI rather than the wire decoder — origin_split only
+     * matches the SUFFIX case-insensitively and copies the apex through with its
+     * original case, so `PEPENET.PEPE` missed a byte-exact store key that
+     * `pepenet.pepe` hit. */
+    for (char *c = apex; *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';
+    for (char *c = sub;  *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';
+
     /* Everything below reads the shared SQLite handles (vw + st) — serialize it
      * so concurrent connection threads don't corrupt SQLite's state. */
     pthread_mutex_lock(&r->mu);

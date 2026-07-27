@@ -163,6 +163,21 @@ static X509 *build_leaf(X509 *root, EVP_PKEY *rootkey,
     X509V3_set_ctx(&ctx, root, x, NULL, NULL, 0);   /* issuer=root → AKI keyid */
     X509V3_set_ctx_nodb(&ctx);
 
+    /* Validate before formatting. X509V3_EXT_conf_nid parses this string as a
+     * CONFIG value where ',' separates entries, so an SNI of
+     * "evil.pepenet.doge,DNS:victim.example.com" would mint a leaf carrying a
+     * SECOND SubjectAltName of the attacker's choosing. The root's critical
+     * NameConstraints does reject the resulting chain, but a name we would never
+     * knowingly sign should not reach the extension builder at all — this is the
+     * input validation, not the last line of defence. Accept only what a DNS
+     * label can legally contain. */
+    for (const char *c = name; *c; c++) {
+        int okc = (*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') ||
+                  (*c >= '0' && *c <= '9') || *c == '-' || *c == '.' || *c == '*';
+        if (!okc) goto err;
+    }
+    if (strlen(name) > 253) goto err;
+
     char san[300];
     snprintf(san, sizeof san, "DNS:%s", name);
     if (!add_ext(x, &ctx, NID_basic_constraints, "critical,CA:FALSE") ||

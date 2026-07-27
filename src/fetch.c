@@ -21,6 +21,16 @@ static uint8_t *find_seq(uint8_t *h, size_t hn, const char *nd, size_t nn) {
     return NULL;
 }
 
+/* Case-insensitive variant. RFC 9110 makes the transfer-coding token
+ * case-insensitive, so a `Transfer-Encoding: CHUNKED` reply is legal and must
+ * not silently fall through as an unchunked body. */
+static uint8_t *find_ci(uint8_t *h, size_t hn, const char *nd, size_t nn) {
+    if (nn == 0 || hn < nn) return NULL;
+    for (size_t i = 0; i + nn <= hn; i++)
+        if (strncasecmp((const char *)h + i, nd, nn) == 0) return h + i;
+    return NULL;
+}
+
 static int dial_loop(uint16_t port) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -66,7 +76,13 @@ static size_t unchunk(uint8_t *p, size_t n) {
         unsigned long len = strtoul((char *)p + ls, NULL, 16);
         r++;                                    /* past \n */
         if (len == 0) return w;
-        if (r + len > n) return 0;
+        /* Compare against what is LEFT; never r + len. The length is an
+         * attacker-chosen hex field, so a chunk header of ffffffffffffffff
+         * makes r + len wrap to a small value, sail past the check, and reach
+         * the memmove below with len == SIZE_MAX. A chunk size of -1 arrives
+         * here as ULONG_MAX by the same route. r <= n holds above, so the
+         * subtraction is always well defined. */
+        if (len > (unsigned long)(n - r)) return 0;
         memmove(p + w, p + r, len);
         w += len; r += len;
         if (r + 1 < n && p[r] == '\r') r += 2;  /* CRLF after each chunk */
@@ -110,15 +126,24 @@ size_t tls_loopback_get(uint16_t port, const char *sni, const char *path,
     uint8_t *hend = find_seq(b.p, b.n, "\r\n\r\n", 4);
     if (!hend) goto done;
     size_t hlen = (size_t)(hend - b.p) + 4;
-    if (memcmp(b.p, "HTTP/1.", 7) != 0 || b.n < 12) goto done;
-    if (strncmp((char *)b.p + 9, "200", 3) != 0) goto done;
+    if (memcmp(b.p, "HTTP/1.", 7) != 0 || b.n < 13) goto done;
+    /* The delimiter check matters: without it "HTTP/1.1 2000" passes as 200,
+     * because only the first three digits are compared. */
+    if (strncmp((char *)b.p + 9, "200", 3) != 0 ||
+        (b.p[12] != ' ' && b.p[12] != '\r')) goto done;
 
+    /* Scan up to and INCLUDING the final header's own CRLF. `hend` points at
+     * the start of the "\r\n\r\n" terminator, so the last header line's CRLF
+     * IS that first "\r\n" — stopping at hend hides the last header entirely,
+     * and `Transfer-Encoding: chunked` last is the ordinary nginx/Kestrel
+     * shape, not a corner case. */
+    uint8_t *hstop = hend + 2;
     int chunked = 0;
-    for (uint8_t *l = b.p; l < hend; ) {
-        uint8_t *le = find_seq(l, (size_t)(hend - l), "\r\n", 2);
+    for (uint8_t *l = b.p; l < hstop; ) {
+        uint8_t *le = find_seq(l, (size_t)(hstop - l), "\r\n", 2);
         if (!le) break;
         if (!strncasecmp((char *)l, "Transfer-Encoding:", 18) &&
-            find_seq(l, (size_t)(le - l), "chunked", 7)) chunked = 1;
+            find_ci(l, (size_t)(le - l), "chunked", 7)) chunked = 1;
         l = le + 2;
     }
 
