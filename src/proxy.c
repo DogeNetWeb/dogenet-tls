@@ -122,39 +122,49 @@ typedef struct {
     const char    *detail;          /* dane_connect's diagnostic string */
 } ErrDiag;
 
-/* The PepeNet mark: the Pepecoin "P with a stroke", rotated a little and drop-
- * shadowed, over a white globe on a green badge. Inline SVG rather than
+/* The PepeNet mark: the Pepecoin "P with a stroke", tilted and edged in the
+ * badge green, over a white globe. Inline SVG rather than
  * design/pepenetlogo.png — that source is 1024x1024 / 775 KB and would base64
- * to roughly a megabyte on every error page; this is ~1.2 KB.
+ * to roughly a megabyte on every error page; this is ~1.3 KB.
  *
- * Two things here are load-bearing and easy to break:
+ * design/logo.svg is the source of truth; keep the two in step.
+ *
+ * Load-bearing and easy to break:
  *   • EVERY attribute value is single-quoted. Unquoted values (fill=none) make
  *     Chrome's HTML parser silently drop the entire enclosing <g> — that is
  *     how the globe vanished the first time. Double quotes would need C
  *     escaping, hence single throughout.
- *   • The '%%' in the filter region are printf escapes: this string is fed
- *     through snprintf, so a literal '%' must be doubled or it eats the
- *     following bytes as a conversion.
- * The badge gradient stops are sampled from the PNG (top #6cb274, mid #429856,
- * bottom #368b4c) — the midpoint is measurably darker than a linear ramp, so
- * three stops rather than two. The P is drawn twice: a blurred black copy for
- * the shadow, then the white glyph. */
+ *   • pnWp/pnGu carry gradientTransform='rotate(-9.8 ...)' to cancel the glyph
+ *     group's rotation. Without it both ramps tilt with the letter, and the
+ *     green edge stops matching the badge behind it — which is the whole point
+ *     of the edge.
+ *   • paint-order='stroke' draws the edge before the fill, so the fill covers
+ *     its inner half and the glyph keeps its weight; a centred stroke would
+ *     eat into the letterform instead.
+ *
+ * Colours sampled from the raster: badge #6cb274/#429856/#368b4c (three stops —
+ * the measured midpoint is darker than a linear ramp), white #ffffff→#dcddd9
+ * shared by the globe and the P. */
 #define PN_LOGO \
  "<svg class='lg' aria-hidden='true' viewBox='0 0 64 64' width='44' height='44'>" \
  "<defs><linearGradient id='pnG' x1='0' y1='0' x2='0' y2='1'>" \
  "<stop offset='0' stop-color='#6cb274'/><stop offset='.5' stop-color='#429856'/>" \
  "<stop offset='1' stop-color='#368b4c'/></linearGradient>" \
- "<filter id='pnS' x='-25%%' y='-25%%' width='160%%' height='160%%'>" \
- "<feGaussianBlur stdDeviation='.9'/></filter></defs>" \
+ "<linearGradient id='pnW' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='0' y2='64'>" \
+ "<stop offset='0' stop-color='#ffffff'/><stop offset='1' stop-color='#dcddd9'/>" \
+ "</linearGradient>" \
+ "<linearGradient id='pnWp' href='#pnW' gradientTransform='rotate(-9.8 32 32)'/>" \
+ "<linearGradient id='pnGu' href='#pnG' gradientUnits='userSpaceOnUse'" \
+ " x1='0' y1='0' x2='0' y2='64' gradientTransform='rotate(-9.8 32 32)'/></defs>" \
  "<circle cx='32' cy='32' r='32' fill='url(#pnG)'/>" \
- "<g fill='none' stroke='#fff' stroke-width='2.15'>" \
+ "<g fill='none' stroke='url(#pnW)' stroke-width='2.15'>" \
  "<circle cx='32' cy='32' r='27.6'/><ellipse cx='32' cy='32' rx='16' ry='27.6'/>" \
  "<path d='M32 4.4v55.2M4.4 32h55.2M11.2 13.8Q32 25.4 52.8 13.8M11.2 50.2Q32 38.6 52.8 50.2'/>" \
- "</g><g transform='rotate(9.8 32 32) translate(32 32) scale(1.10) translate(-32 -32)'>" \
- "<path d='" PN_P "' fill='#000' opacity='.42' filter='url(#pnS)' transform='translate(1.1 1.5)'/>" \
- "<path d='" PN_P "' fill='#fff'/></g></svg>"
+ "</g><g transform='rotate(9.8 32 32)'>" \
+ "<path d='" PN_P "' fill='url(#pnWp)' stroke='url(#pnGu)' stroke-width='4'" \
+ " stroke-linejoin='miter' stroke-miterlimit='12' paint-order='stroke'/></g></svg>"
 
-/* the glyph outline, shared by the shadow copy and the white face */
+/* the glyph outline */
 #define PN_P \
  "M21.1 17.1h19.4c4.8 0 7.4 4.8 7.4 10.9s-2.6 10.9-7.4 10.9H28.1v13.35h-7V30.4" \
  "h-3.6v-4.4h3.6zm7 5.8v3.1h6.3v4.4h-6.3v2.5h7.9c3 0 4.3-2.2 4.3-5s-1.3-5-4.3-5z"
