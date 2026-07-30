@@ -88,7 +88,9 @@ DaneResult dane_connect(SSL_CTX *ctx, const char *host, int port,
     if (SSL_connect(ssl) != 1) {
         long vr = SSL_get_verify_result(ssl);
         DaneResult res = (vr == X509_V_ERR_DANE_NO_MATCH) ? DANE_MISMATCH : DANE_TLS_ERR;
-        SETERR("handshake failed (verify=%ld)", vr);
+        /* The bare number was useless to anyone without the X509_V_ERR_* table
+         * in front of them; carry OpenSSL's own text for it. */
+        SETERR("handshake failed (verify=%ld: %s)", vr, X509_verify_cert_error_string(vr));
         close(fd); SSL_free(ssl);
         return res;
     }
@@ -104,7 +106,29 @@ DaneResult dane_connect(SSL_CTX *ctx, const char *host, int port,
         return DANE_OK;
     }
 
-    SETERR("no TLSA match (verify=%ld)", vr);
+    /* A mismatch is the one failure a user genuinely needs to diagnose: the
+     * origin IS reachable and IS speaking TLS, it just presented a key the
+     * name's owner never published. Report WHICH key, so the operator can see
+     * at a glance whether they rotated without updating the TLSA (the pin they
+     * published vs the one their server is serving) — otherwise the page can
+     * only say "no match" and leave them guessing. The session is still open
+     * here, so the leaf is still available. */
+    {
+        char got[80] = "";
+        X509 *leaf = SSL_get0_peer_certificate(ssl);      /* borrowed */
+        uint8_t spki[32];
+        if (leaf && dane_spki_sha256(leaf, spki)) {
+            static const char H[] = "0123456789abcdef";
+            for (int i = 0; i < 32; i++) {
+                got[i * 2]     = H[spki[i] >> 4];
+                got[i * 2 + 1] = H[spki[i] & 15];
+            }
+            got[64] = '\0';
+        }
+        if (got[0]) SETERR("verify=%ld: %s — origin presented spki-sha256 %s",
+                           vr, X509_verify_cert_error_string(vr), got);
+        else        SETERR("verify=%ld: %s", vr, X509_verify_cert_error_string(vr));
+    }
     SSL_shutdown(ssl); close(fd); SSL_free(ssl);
     return DANE_MISMATCH;
 }

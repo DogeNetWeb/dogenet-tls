@@ -258,7 +258,11 @@ int main(void) {
     *psa = (struct serve_args){ pfd, root, rootkey, &rt };
     pthread_t pth; pthread_create(&pth, NULL, serve_tramp, psa);
 
-    char body[4096], cn[128];
+    /* The diagnostic page is ~5 KB (inline CSS + logo + the diagnostics block),
+     * and the rows this file asserts on sit near its end. At 4096 the read
+     * stopped mid-page and the assertions failed on text that was present but
+     * unread — a truncated buffer masquerading as a product regression. */
+    char body[16384], cn[128];
 
     /* 1. GOOD — correct TLSA → verified chain + origin bytes. */
     int v1 = browser_get("127.0.0.1", pport, "www.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
@@ -268,16 +272,21 @@ int main(void) {
     if (!strcmp(cn, "www.pepenet.doge")) ok("leaf minted per-SNI (CN == requested name)");
     else { bad("leaf CN should equal the SNI"); printf("       cn=%s\n", cn); }
 
-    /* 2. BAD — wrong TLSA → still trusted leaf, but fail-closed page, no origin. */
+    /* 2. BAD — wrong TLSA → still trusted leaf, but fail-closed page, no origin.
+     * 502 on the status line + the DANE verdict named in the diagnostics. */
     int v2 = browser_get("127.0.0.1", pport, "bad.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
-    if (v2 && strstr(body, "DANE") && !strstr(body, ORIGIN_BODY))
+    if (v2 && strstr(body, "HTTP/1.0 502") && strstr(body, "DANE") && !strstr(body, ORIGIN_BODY))
         ok("bad TLSA: fail-closed page served, origin bytes withheld");
     else { bad("bad TLSA should fail closed without leaking origin");
            printf("       verified=%d body=%.80s\n", v2, body); }
 
-    /* 3. UNKNOWN — no route → local 404, no origin dial. */
+    /* 3. UNKNOWN — no route → local 404, no origin dial.
+     * Asserted on the STATUS LINE, not on page copy: the fail-closed contract
+     * is "404 and not one origin byte", and the diagnostic page's wording is
+     * expected to keep changing. Greping its prose made this test fail on a
+     * pure copy edit, which told us nothing about the behaviour. */
     int v3 = browser_get("127.0.0.1", pport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
-    if (v3 && strstr(body, "unknown") && !strstr(body, ORIGIN_BODY))
+    if (v3 && strstr(body, "HTTP/1.0 404") && !strstr(body, ORIGIN_BODY))
         ok("unknown name: verified leaf + local 404, no origin bytes");
     else { bad("unknown name should serve a local 404");
            printf("       verified=%d body=%.80s\n", v3, body);

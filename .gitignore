@@ -11,3 +11,5 @@ resolve_test
 proxy_jitter_test
 proxy_jitter_tsan
 *.dSYM/
+ca_deep_test
+.DS_Store

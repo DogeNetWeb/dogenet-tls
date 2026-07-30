@@ -71,7 +71,7 @@ test: ca_test dane_test proxy_test origin_test sscert_test
 	./sscert_test
 
 clean:
-	rm -f pepenet-tls ca_test dane_test proxy_test origin_test sscert_test
+	rm -f pepenet-tls ca_test dane_test proxy_test origin_test sscert_test ca_deep_test
 
 .PHONY: all test clean
 
@@ -83,6 +83,13 @@ clean:
 
 dane_deep_test: test/dane_deep_test.c src/dane.c
 	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
+
+# ca_deep_test covers src/ca.c beyond ca_test's NameConstraints proof: the TLD
+# whitelist, path/CN derivation, the SAN-injection guard, cert shape, serial
+# entropy and on-disk persistence. Hermetic (its own mkdtemp'd dir), so it
+# needs nothing but ca.c and libcrypto.
+ca_deep_test: test/ca_deep_test.c src/ca.c
+	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS)
 
 fetch_test: test/fetch_test.c src/fetch.c
 	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
@@ -96,12 +103,12 @@ resolve_test: test/resolve_test.c src/resolve.c src/origin.c $(DNSSRC) $(NETLIB)
 proxy_jitter_test: test/proxy_jitter_test.c src/proxy.c src/ca.c src/dane.c
 	$(CC) $(CFLAGS) -Isrc -o $@ $^ $(LDFLAGS) -lpthread
 
-# the three hermetic deep suites
-# runs all three even when one fails, then reports the overall verdict --
+# the four hermetic deep suites
+# runs all four even when one fails, then reports the overall verdict --
 # several of these suites fail against real defects, and stopping at the first
 # would hide the others.
-check-deep: dane_deep_test fetch_test resolve_test
-	@rc=0; for t in dane_deep_test fetch_test resolve_test; do \
+check-deep: dane_deep_test fetch_test resolve_test ca_deep_test
+	@rc=0; for t in dane_deep_test fetch_test resolve_test ca_deep_test; do \
 	    echo "── $$t ──"; ./$$t || rc=1; echo; \
 	done; \
 	if [ $$rc -eq 0 ]; then echo "check-deep: all suites passed"; \
@@ -122,6 +129,6 @@ check-jitter-tsan: proxy_jitter_tsan
 	TSAN_OPTIONS="halt_on_error=0 second_deadlock_stack=1 history_size=7" ./proxy_jitter_tsan
 
 clean-deep:
-	rm -f dane_deep_test fetch_test resolve_test proxy_jitter_test proxy_jitter_tsan
+	rm -f dane_deep_test fetch_test resolve_test ca_deep_test proxy_jitter_test proxy_jitter_tsan
 
 .PHONY: check-deep check-jitter check-jitter-tsan clean-deep

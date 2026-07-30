@@ -56,21 +56,242 @@ static int sni_cb(SSL *ssl, int *al, void *arg) {
     return SSL_TLSEXT_ERR_OK;
 }
 
-/* Serve a small local page over the (trusted) browser session. Used fail-closed:
- * we present a leaf the browser trusts, but the body is OUR diagnostic — never
+/* The desktop build passes -DPEPENET_VERSION from CMake (CMakeLists.txt:38 —
+ * the one source of truth). A standalone pepenet-tls build has no version of
+ * its own, so it says "dev" rather than carrying a hardcoded copy that would
+ * silently drift the next time the app's version is bumped. */
+#ifndef PEPENET_VERSION
+#define PEPENET_VERSION "dev"
+#endif
+
+/* ── the fail-closed diagnostic page ─────────────────────────────────────────
+ *
+ * Everything this page interpolates is attacker-influenced: the SNI arrives on
+ * the wire, and the origin address + TLSA come from records the name's owner
+ * publishes. Escaping is therefore load-bearing rather than hygiene. The page
+ * is served ON the site's own origin, over a TLS session the browser trusts,
+ * and it is served EXACTLY when DANE refused the origin — so interpolating raw
+ * would hand a server we just declined to authenticate a scripting context on
+ * the very name it failed to prove it owns. esc() is applied to every field. */
+static void esc(char *dst, size_t cap, const char *src) {
+    if (!cap) return;
+    size_t o = 0;
+    for (const unsigned char *p = (const unsigned char *)(src ? src : ""); *p; p++) {
+        char one[2] = { 0, 0 };
+        const char *rep;
+        switch (*p) {
+            case '&':  rep = "&amp;";  break;
+            case '<':  rep = "&lt;";   break;
+            case '>':  rep = "&gt;";   break;
+            case '"':  rep = "&quot;"; break;
+            case '\'': rep = "&#39;";  break;
+            default:
+                /* control bytes become spaces; anything else (incl. UTF-8
+                 * continuation bytes) passes through unchanged */
+                one[0] = (*p < 0x20 || *p == 0x7f) ? ' ' : (char)*p;
+                rep = one;
+        }
+        size_t rl = strlen(rep);
+        if (o + rl >= cap) break;
+        memcpy(dst + o, rep, rl);
+        o += rl;
+    }
+    dst[o] = '\0';
+}
+
+static void hexs(char *dst, size_t cap, const uint8_t *b, size_t n) {
+    static const char H[] = "0123456789abcdef";
+    size_t o = 0;
+    for (size_t i = 0; i < n && o + 3 <= cap; i++) {
+        dst[o++] = H[b[i] >> 4];
+        dst[o++] = H[b[i] & 15];
+    }
+    dst[o < cap ? o : cap - 1] = '\0';
+}
+
+/* What the page can tell the user about this failure. origin_host NULL means
+ * the name never resolved, so there is no endpoint or pin to show. */
+typedef struct {
+    const char    *sni;
+    const char    *origin_host;
+    int            origin_port;
+    int            have_tlsa;
+    uint8_t        usage, selector, mtype;
+    const uint8_t *assoc;
+    size_t         assoc_len;
+    const char    *detail;          /* dane_connect's diagnostic string */
+} ErrDiag;
+
+/* The PepeNet mark: the Pepecoin "P with a stroke", rotated a little and drop-
+ * shadowed, over a white globe on a green badge. Inline SVG rather than
+ * design/pepenetlogo.png — that source is 1024x1024 / 775 KB and would base64
+ * to roughly a megabyte on every error page; this is ~1.2 KB.
+ *
+ * Two things here are load-bearing and easy to break:
+ *   • EVERY attribute value is single-quoted. Unquoted values (fill=none) make
+ *     Chrome's HTML parser silently drop the entire enclosing <g> — that is
+ *     how the globe vanished the first time. Double quotes would need C
+ *     escaping, hence single throughout.
+ *   • The '%%' in the filter region are printf escapes: this string is fed
+ *     through snprintf, so a literal '%' must be doubled or it eats the
+ *     following bytes as a conversion.
+ * The badge gradient stops are sampled from the PNG (top #6cb274, mid #429856,
+ * bottom #368b4c) — the midpoint is measurably darker than a linear ramp, so
+ * three stops rather than two. The P is drawn twice: a blurred black copy for
+ * the shadow, then the white glyph. */
+#define PN_LOGO \
+ "<svg class='lg' aria-hidden='true' viewBox='0 0 64 64' width='44' height='44'>" \
+ "<defs><linearGradient id='pnG' x1='0' y1='0' x2='0' y2='1'>" \
+ "<stop offset='0' stop-color='#6cb274'/><stop offset='.5' stop-color='#429856'/>" \
+ "<stop offset='1' stop-color='#368b4c'/></linearGradient>" \
+ "<filter id='pnS' x='-25%%' y='-25%%' width='160%%' height='160%%'>" \
+ "<feGaussianBlur stdDeviation='.9'/></filter></defs>" \
+ "<circle cx='32' cy='32' r='32' fill='url(#pnG)'/>" \
+ "<g fill='none' stroke='#fff' stroke-width='2.15'>" \
+ "<circle cx='32' cy='32' r='27.6'/><ellipse cx='32' cy='32' rx='16' ry='27.6'/>" \
+ "<path d='M32 4.4v55.2M4.4 32h55.2M11.2 13.8Q32 25.4 52.8 13.8M11.2 50.2Q32 38.6 52.8 50.2'/>" \
+ "</g><g transform='rotate(9.8 32 32) translate(32 32) scale(1.10) translate(-32 -32)'>" \
+ "<path d='" PN_P "' fill='#000' opacity='.42' filter='url(#pnS)' transform='translate(1.1 1.5)'/>" \
+ "<path d='" PN_P "' fill='#fff'/></g></svg>"
+
+/* the glyph outline, shared by the shadow copy and the white face */
+#define PN_P \
+ "M21.1 17.1h19.4c4.8 0 7.4 4.8 7.4 10.9s-2.6 10.9-7.4 10.9H28.1v13.35h-7V30.4" \
+ "h-3.6v-4.4h3.6zm7 5.8v3.1h6.3v4.4h-6.3v2.5h7.9c3 0 4.3-2.2 4.3-5s-1.3-5-4.3-5z"
+
+/* Serve a local page over the (trusted) browser session. Used fail-closed: we
+ * present a leaf the browser trusts, but the body is OUR diagnostic — never
  * origin bytes we could not authenticate. */
-static void serve_status(SSL *b, int code, const char *title, const char *detail) {
-    char body[700], resp[1000];
-    int bl = snprintf(body, sizeof body,
-        "<!doctype html><meta charset=utf-8><title>%d %s</title>"
-        "<h1>%d %s</h1><p>%s</p>"
-        "<hr><small>pepenet-tls — chain-authenticated .doge/.pepe</small>\n",
-        code, title, code, title, detail);
-    int rl = snprintf(resp, sizeof resp,
+static void serve_error(SSL *b, int code, const char *title,
+                        const char *human, const ErrDiag *d) {
+    static const ErrDiag EMPTY = { 0 };
+    if (!d) d = &EMPTY;
+
+    char e_sni[512], e_host[256], e_detail[640], e_title[160], e_human[1024];
+    char hex[160], e_hex[160];
+    esc(e_sni,    sizeof e_sni,    d->sni && d->sni[0] ? d->sni : "(none sent)");
+    esc(e_host,   sizeof e_host,   d->origin_host);
+    esc(e_detail, sizeof e_detail, d->detail);
+    esc(e_title,  sizeof e_title,  title);
+    esc(e_human,  sizeof e_human,  human);
+    hexs(hex, sizeof hex, d->assoc, d->assoc_len);
+    esc(e_hex, sizeof e_hex, hex);
+
+    size_t cap = 16384;
+    char *body = malloc(cap);
+    if (!body) return;
+    int o = 0;
+
+    o += snprintf(body + o, cap - (size_t)o,
+      "<!doctype html><html lang=en><meta charset=utf-8>"
+      "<meta name=viewport content='width=device-width,initial-scale=1'>"
+      "<title>%d %s</title><style>"
+      ":root{--bg:#f7f8f7;--fg:#12160f;--mut:#5c6659;--card:#fff;--line:#e2e6e0;"
+      "--accent:#43a75e;--err:#c0342b;--code:#f0f2ef}"
+      "@media(prefers-color-scheme:dark){:root{--bg:#0f1210;--fg:#e8ece6;"
+      "--mut:#98a394;--card:#171b18;--line:#252b26;--err:#ff7b6b;--code:#1e231f}}"
+      "*{box-sizing:border-box}"
+      "body{margin:0;min-height:100vh;display:flex;align-items:center;"
+      "justify-content:center;padding:24px;background:var(--bg);color:var(--fg);"
+      "font:15px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}"
+      ".card{width:100%%;max-width:40rem;background:var(--card);border:1px solid var(--line);"
+      "border-radius:14px;padding:30px 32px}"
+      ".hd{display:flex;align-items:center;gap:12px;padding-bottom:18px;"
+      "border-bottom:1px solid var(--line);margin-bottom:22px}"
+      ".lg{flex:none;display:block}"
+      ".bn{font-weight:700;letter-spacing:-.01em}"
+      ".bs{color:var(--mut);font-size:12px}"
+      /* red, not green: this pill is the first thing read, and a green badge
+         reads as "all clear" on a page whose entire purpose is refusal */
+      ".code{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.08em;"
+      "color:var(--err);border:1px solid var(--err);border-radius:999px;"
+      "padding:2px 10px;margin-bottom:10px}"
+      "h1{margin:0 0 12px;font-size:22px;line-height:1.25;letter-spacing:-.02em}"
+      "p{margin:0 0 14px;color:var(--mut)}"
+      /* sits between the code pill and the headline, so it stays tight to the
+         pill and carries no rule of its own — the details block below supplies
+         the only horizontal divider in this region */
+      ".req{margin:0 0 8px}"
+      ".exp{margin:14px 0 2px}"
+      ".nm{color:var(--fg);font-weight:600;word-break:break-all}"
+      "details{margin-top:20px;border-top:1px solid var(--line);padding-top:16px}"
+      "summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--mut);"
+      "list-style:none;user-select:none;display:flex;align-items:center;gap:8px}"
+      "summary:hover{color:var(--fg)}"
+      "summary::-webkit-details-marker{display:none}"
+      "summary::before{content:'';flex:none;width:0;height:0;"
+      "border-left:5px solid var(--accent);border-top:4px solid transparent;"
+      "border-bottom:4px solid transparent;transition:transform .12s}"
+      "details[open] summary::before{transform:rotate(90deg)}"
+      "dl{margin:16px 0 0;font-size:13px}"
+      "dt{color:var(--mut);font-size:11px;text-transform:uppercase;"
+      "letter-spacing:.06em;margin-top:14px}"
+      "dt:first-child{margin-top:0}"
+      "dd{margin:3px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;"
+      "font-size:12.5px;word-break:break-all;background:var(--code);"
+      "border-radius:6px;padding:6px 9px}"
+      ".ft{margin-top:22px;padding-top:14px;border-top:1px solid var(--line);"
+      "font-size:11.5px;color:var(--mut)}"
+      "</style><body><main class=card>"
+      "<div class=hd>" PN_LOGO
+      "<div><div class=bn>PepeNet</div>"
+      "<div class=bs>powered by Pepecoin</div></div></div>"
+      /* order: error code -> requested name -> diagnostics -> description.
+         The name belongs beside the code (it identifies WHAT failed); the
+         prose explanation is the least urgent thing on the page, so it sits
+         below the diagnostics rather than pushing them under the fold. */
+      "<div class=code>ERROR %d</div>"
+      "<p class=req>Requested name <span class=nm>%s</span></p>"
+      "<h1>%s</h1>",
+      code, e_title, code, e_sni, e_title);
+
+    /* The expandable diagnostics — what we resolved, what we expected, and what
+     * the origin actually did. The prose explanation leads the panel: collapsed,
+     * the page is just code + title + name, and everything discretionary is one
+     * click away. It also puts the description directly above the verdict rows
+     * it refers to. */
+    o += snprintf(body + o, cap - (size_t)o,
+      "<details><summary>Diagnostics</summary>"
+      "<p class=exp>%s</p>"
+      "<dl><dt>name (SNI)</dt><dd>%s</dd>", e_human, e_sni);
+
+    if (d->origin_host && d->origin_host[0])
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>published origin (A record)</dt><dd>%s:%d</dd>", e_host, d->origin_port);
+    else
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>published origin (A record)</dt><dd>none published</dd>");
+
+    if (d->have_tlsa)
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>published TLSA (pinned key)</dt><dd>%u %u %u %s</dd>",
+          d->usage, d->selector, d->mtype, e_hex[0] ? e_hex : "(empty)");
+    else
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>published TLSA (pinned key)</dt><dd>none published</dd>");
+
+    o += snprintf(body + o, cap - (size_t)o,
+      "<dt>DANE verdict</dt><dd>%s</dd></dl>"
+      "<p style='margin:16px 0 0;font-size:12.5px'>These records are signed by "
+      "the name&#39;s owner, not supplied by the server that answered. The proxy "
+      "refuses to relay any byte from an origin whose key does not match the "
+      "published pin.</p>"
+      "</details>"
+      "<div class=ft>pepenet-tls " PEPENET_VERSION "</div>"
+      "</main>", e_detail[0] ? e_detail : "(no detail)");
+
+    if (o < 0) { free(body); return; }
+    if ((size_t)o >= cap) o = (int)cap - 1;    /* snprintf truncated: stay honest */
+
+    char hdr[256];
+    int hl = snprintf(hdr, sizeof hdr,
         "HTTP/1.0 %d %s\r\nContent-Type: text/html; charset=utf-8\r\n"
-        "Content-Length: %d\r\nConnection: close\r\n\r\n%s",
-        code, title, bl, body);
-    SSL_write(b, resp, rl);
+        "Content-Length: %d\r\nCache-Control: no-store\r\n"
+        "X-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+        code, title, o);
+    SSL_write(b, hdr, hl);
+    SSL_write(b, body, o);
+    free(body);
 
     /* Drain whatever the browser already sent before we close.
      *
@@ -204,11 +425,21 @@ static void handle(Proxy *px, int cfd) {
     if (SSL_accept(b) == 1) {                       /* leaf minted in sni_cb */
         const char *sni = SSL_get_servername(b, TLSEXT_NAMETYPE_host_name);
         OriginInfo oi;
-        char err[160];
+        /* Wide enough for the mismatch verdict in full: "verify=<n>: <OpenSSL
+         * text> - origin presented spki-sha256 <64 hex>". At 160 the hash was
+         * truncated, which silently destroyed the pinned-vs-presented
+         * comparison the page exists to show. */
+        char err[288];
         if (!sni || !px->resolve(sni, &oi, px->ud)) {
             if (px->ev && px->ev->verdict && sni)
                 px->ev->verdict(px->ev->u, sni, 0, "");
-            serve_status(b, 404, "unknown .doge/.pepe name", sni ? sni : "(no SNI)");
+            ErrDiag d = { sni, NULL, 0, 0, 0, 0, 0, NULL, 0,
+                          sni ? "no zone published for this name"
+                              : "the client sent no SNI, so no name could be resolved" };
+            serve_error(b, 404, "No such name on the chain",
+                "Nothing is published for this name. Either it was never registered, "
+                "its lease has lapsed, or its owner has not added any DNS records yet.",
+                &d);
         } else {
             SSL *o = NULL; int ofd = -1;
             DaneResult r = dane_connect(px->client_ctx, oi.host, oi.port, sni,
@@ -220,7 +451,38 @@ static void handle(Proxy *px, int cfd) {
                 splice(b, o);
                 SSL_shutdown(o); close(ofd); SSL_free(o);
             } else {
-                serve_status(b, 502, "origin failed DANE authentication", err);
+                /* One code per failure mode. Collapsing all three into a bare
+                 * 502 told the user nothing about whether the site was down,
+                 * misconfigured, or being impersonated — which are three very
+                 * different things to act on. */
+                ErrDiag d = { sni, oi.host, oi.port, 1,
+                              oi.usage, oi.selector, oi.mtype,
+                              oi.assoc, oi.assoc_len, err };
+                switch (r) {
+                case DANE_CONNECT_ERR:
+                    serve_error(b, 504, "Origin unreachable",
+                        "This name is registered and its records resolved, but nothing "
+                        "answered at the published address. The site is probably "
+                        "offline, or its A record is out of date. The verdict below "
+                        "carries the exact connection error.", &d);
+                    break;
+                case DANE_MISMATCH:
+                    serve_error(b, 502, "Origin key does not match its published pin",
+                        "The server answered, but the certificate it presented is not "
+                        "the one this name's owner published. Access was refused. This "
+                        "is the protection working as intended — either someone is "
+                        "impersonating this name, or its operator rotated keys without "
+                        "publishing a matching TLSA record. Compare the pinned key with "
+                        "the one the origin actually presented in the verdict below; "
+                        "its verify code names the precise reason.", &d);
+                    break;
+                default:
+                    serve_error(b, 502, "TLS error talking to the origin",
+                        "The origin was reachable, but the TLS connection to it failed "
+                        "before its identity could be checked against the published "
+                        "pin. The verify code in the verdict below names the reason.", &d);
+                    break;
+                }
             }
         }
         SSL_shutdown(b);
