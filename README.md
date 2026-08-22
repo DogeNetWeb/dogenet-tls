@@ -4,6 +4,37 @@ DANE-aware local TLS proxy for PepeNet. Name-constrained root CA + DANE
 origin check + a loopback proxy so `https://foo.pepe` shows a padlock.
 Architecture and the security model: [`DESIGN.md`](DESIGN.md).
 
+## Install (one command)
+
+Clones the family, builds `dnsd` + `pepenet-tls`, starts them as user
+services, then plants the CA / split-DNS / `:443` redirect.
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash
+```
+
+```sh
+# doge instead of pepe
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash -s -- --tld doge
+
+# undo (stops daemons, removes OS wiring; keeps ~/.pepenet data)
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash -s -- uninstall
+```
+
+**Windows**
+
+pepenet-tls is POSIX. The padlock is [PepeNet desktop](https://github.com/PepeNetWeb/pepenet-desktop/releases):
+
+```powershell
+irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+```
+
+`get.sh` defaults to the `linux` branch (OpenSSL/glibc/sudo work) and
+`~/.pepenet`. Override with `PEPENET_REF`, `PEPENET_HOME`, `PEPENET_TLD`,
+`PEPENET_PEER`.
+
 ## Build
 
 Needs **OpenSSL 3** (DANE: `SSL_dane_*`). LibreSSL does not work.
