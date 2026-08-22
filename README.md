@@ -27,11 +27,23 @@ curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh
 
 **Windows**
 
-pepenet-tls is POSIX. The padlock is [PepeNet desktop](https://github.com/PepeNetWeb/pepenet-desktop/releases):
+pepenet-tls is POSIX (no Windows service). The padlock is PepeNet
+desktop — same in-process resolver + proxy, tray-resident. The
+one-liner downloads the latest MSI, installs per-user, starts it
+hidden, and registers it at every logon:
 
 ```powershell
 irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
 ```
+
+```powershell
+# undo
+$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+```
+
+Then **Enable web access** in the app (one UAC prompt for the NRPT
+rule). Quit leaves the wiring planted; the tray is the always-on
+shape — there is no session-less Windows service.
 
 `get.sh` defaults to the `linux` branch (OpenSSL/glibc/sudo work) and
 `~/.pepenet`. Override with `PEPENET_REF`, `PEPENET_HOME`, `PEPENET_TLD`,
