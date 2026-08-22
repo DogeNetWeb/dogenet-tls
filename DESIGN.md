@@ -151,10 +151,10 @@ of the lean `dnsd` resolver; the proxy links it, the resolver does not).
 | File | Responsibility |
 |------|----------------|
 | `src/ca.c` | Generate the **name-constrained** root (≈10 y) into `~/.pepenet/pepenet-root.{crt,key}`; mint + cache per-SNI leaves (short TTL, SAN `dNSName=<name>`) signed by it. |
-| `src/trust.c` | Install / uninstall the root: macOS `security add-trusted-cert -d -r trustRoot -k login.keychain`; Firefox/Chrome via `certutil -A -d sql:<nssdir>`; Linux `/usr/local/share/ca-certificates` + `update-ca-certificates`. `--uninstall` reverses each. |
+| `src/trust.c` | Install / uninstall the root in the **user** store: macOS `security add-trusted-cert -r trustRoot` (login keychain, GUI auth = consent); Linux `certutil -A` into `~/.pki/nssdb` (unprivileged; `certutil` missing is a no-op). The Linux **system** store (`/usr/local/share/ca-certificates` + `update-ca-certificates`, or Fedora `update-ca-trust`) is `install-linux.sh` as root — there is no keychain GUI, so polkit/sudo is consent. |
 | `src/proxy.c` | `127.0.0.1` TLS listener; SNI → fold zone (reuses `dns_fold`/`zone_apply`/`sp_view_*` from `pepenet-dns` + `pepenet-mesh`, **unchanged**) → OpenSSL-DANE dial to the real origin → present minted leaf → splice plaintext. |
 | `src/main.c` | Daemon glue: open the shared carrier store read-only (WAL read-conn, exactly as `dnsd`'s resolver thread does), event loop. |
-| `install.sh` | The one privileged step: plant the CA (`trust.c --install`), write `/etc/resolver/<tld>` for this box's TLD, add the pf redirect `127.0.0.1:443 → :8443`. |
+| `install.sh` | The one privileged step. Darwin: plant the CA (`install-ca`), write `/etc/resolver/<tld>`, add the pf redirect `127.0.0.1:443 → :8443`. Linux (`install-linux.sh`): nssdb as the user, system CA store, systemd-resolved split-DNS on `lo` (`~$TLD` → `127.0.0.1:15353`, never a global `DNS=`), nftables `:443 → :proxy` (best-effort). |
 
 **Reuse, do not reimplement:** zone folding, ownership view, and record decode all come
 from the existing `pepenet-dns` / `pepenet-mesh` trees by linking, matching how `dnsd`
@@ -445,9 +445,10 @@ The cryptography is the easy part; **independence and namespace legitimacy are t
 
 ## 9. Deferred / open
 
-- **Firefox & Chrome trust** need `certutil` (NSS), which is **not installed on this box**
-  (comes with the `nss` brew pkg). Slice 1 targets the macOS keychain (`security`, present);
-  NSS install is a follow-on within `trust.c`.
+- **Firefox & Chrome trust on macOS** still want `certutil` (NSS) for browsers that ignore
+  the login keychain; we flip `security.enterprise_roots.enabled` instead. Linux plants the
+  system CA store (p11-kit) and uses the same pref; `certutil` into `~/.pki/nssdb` is the
+  unprivileged bonus path.
 - **`HTTPS`/`SVCB` RR (type 65)** for non-443 ports / ALPN hints — v1 assumes origin `:443`
   and `TLSA` at `_443._tcp`.
 - **ECH / encrypted SNI** would hide the SNI the proxy routes on — out of scope; `.doge`

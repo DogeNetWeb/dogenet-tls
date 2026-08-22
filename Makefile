@@ -3,11 +3,26 @@
 # Slice 1: the name-constrained root CA + trust install + the NameConstraints
 # accept/reject proof (`make test`).
 #
-# Links Homebrew openssl@3 EXPLICITLY, never the system default: macOS ships
-# LibreSSL, which lacks both the DANE API the proxy will need and EVP_EC_gen.
-# Override OPENSSL= if it lives elsewhere (e.g. /usr/local/opt/openssl@3).
+# OpenSSL 3 is load-bearing: DANE (`SSL_dane_*`) and EVP_EC_gen. macOS's
+# system `/usr/bin/openssl` is LibreSSL and has neither, so Darwin links
+# Homebrew openssl@3 EXPLICITLY. Linux distros ship OpenSSL 3 — pkg-config.
+# Override OPENSSL= on Darwin if it lives elsewhere (e.g. /usr/local/opt/openssl@3).
 
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Darwin)
 OPENSSL ?= /opt/homebrew/opt/openssl@3
+CFLAGS  ?= -std=c11 -O2 -Wall -Wextra -I$(OPENSSL)/include
+LDFLAGS ?= -L$(OPENSSL)/lib -Wl,-rpath,$(OPENSSL)/lib -lssl -lcrypto
+else
+PKG_OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
+PKG_OPENSSL_LIBS   := $(shell pkg-config --libs openssl 2>/dev/null)
+ifeq ($(strip $(PKG_OPENSSL_LIBS)),)
+$(error OpenSSL 3 not found — install libssl-dev (Debian/Ubuntu) or openssl-devel (Fedora))
+endif
+CFLAGS  ?= -std=c11 -O2 -Wall -Wextra $(PKG_OPENSSL_CFLAGS)
+LDFLAGS ?= $(PKG_OPENSSL_LIBS)
+endif
 
 # The resolver (slice 4) reuses pepenet-dns's record store + ownership oracle,
 # exactly as dnsd links them. DNS := the sibling repo; the rest mirror its Makefile.
@@ -18,8 +33,6 @@ SECPLIB := $(IDX)/build/secp/lib/libsecp256k1.a
 NETLIB  := $(NET)/libpepenetnet.a
 
 CC      ?= cc
-CFLAGS  ?= -std=c11 -O2 -Wall -Wextra -I$(OPENSSL)/include
-LDFLAGS ?= -L$(OPENSSL)/lib -Wl,-rpath,$(OPENSSL)/lib -lssl -lcrypto
 
 # include paths to reuse the DNS record store + oracle
 DNSINC  := -I$(DNS)/src -I$(NET)/include
@@ -122,7 +135,7 @@ check-jitter: proxy_jitter_test
 # ThreadSanitizer build of the jitter suite. -O1 -g so TSan reports carry
 # usable frames; separate binary so the normal one stays optimized.
 proxy_jitter_tsan: test/proxy_jitter_test.c src/proxy.c src/ca.c src/dane.c
-	$(CC) -std=c11 -g -O1 -fsanitize=thread -Wall -Wextra -I$(OPENSSL)/include \
+	$(CC) -std=c11 -g -O1 -fsanitize=thread -Wall -Wextra $(filter -I%,$(CFLAGS)) \
 	    -Isrc -o $@ $^ $(LDFLAGS) -lpthread
 
 check-jitter-tsan: proxy_jitter_tsan

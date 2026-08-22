@@ -31,6 +31,12 @@
 
 set -eu
 
+# Linux has no keychain / /etc/resolver / pf — those analogues live in
+# install-linux.sh (nssdb + ca-certificates + systemd-resolved + nftables).
+if [ "$(uname -s)" = "Linux" ]; then
+    exec "$(cd "$(dirname "$0")" && pwd)/install-linux.sh" "$@"
+fi
+
 ACTION="${1:-}"
 TLD="${2:-}"
 DNS_PORT=15353

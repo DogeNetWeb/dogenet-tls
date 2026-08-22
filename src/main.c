@@ -7,7 +7,7 @@
  *                                              ensure the self-signed ORIGIN
  *                                              cert+key for <name>.<tld> and
  *                                              print its TLSA 3 1 1 rdata
- *   pepenet-tls [--tld ...] install-ca         trust the root (login keychain, GUI auth)
+ *   pepenet-tls [--tld ...] install-ca         trust the root (macOS keychain / Linux NSS)
  *   pepenet-tls [--tld ...] uninstall-ca       remove it
  *   pepenet-tls [--tld ...] serve --db <indexer> --store <carrier> [--listen IP] [--port N]
  *                                              run the DANE proxy (slice 4)
@@ -190,12 +190,25 @@ int main(int argc, char **argv) {
         if (!ca_root_ensure(&c, &k)) { fprintf(stderr, "install: no root\n"); return 1; }
         X509_free(c); EVP_PKEY_free(k);
         int ok = trust_install(ca_root_cert_path());
+#ifdef __APPLE__
         printf(ok ? "installed .%s root into login keychain\n" : "install failed\n", ca_tld());
+#elif defined(__linux__)
+        printf(ok ? "installed .%s root into the user NSS db (~/.pki/nssdb)\n"
+                  : "install failed\n", ca_tld());
+#else
+        printf(ok ? "installed .%s root\n" : "install failed\n", ca_tld());
+#endif
         return ok ? 0 : 1;
     }
     if (!strcmp(argv[1], "uninstall-ca")) {
         int ok = trust_uninstall(ca_root_cert_path(), ca_root_cn());
+#ifdef __APPLE__
         printf(ok ? "removed .%s root from login keychain\n" : "uninstall failed\n", ca_tld());
+#elif defined(__linux__)
+        printf(ok ? "removed .%s root from the user NSS db\n" : "uninstall failed\n", ca_tld());
+#else
+        printf(ok ? "removed .%s root\n" : "uninstall failed\n", ca_tld());
+#endif
         return ok ? 0 : 1;
     }
     return usage();
