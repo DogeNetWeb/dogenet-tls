@@ -6,10 +6,10 @@
 #   curl -fsSL .../get.sh | bash -s -- --tld pepe
 #   curl -fsSL .../get.sh | bash -s -- uninstall
 #
-# Clones the family, builds dnsd + pepenet-tls, starts them as user services,
-# then elevates to plant the CA / split-DNS / :443 redirect. That is the
-# padlock: OS wiring PLUS the two daemons. install.sh by itself only does
-# the OS half.
+# Clones the family, builds dnsd + pepenet-tls, installs them as boot
+# daemons (systemd system units / LaunchDaemons — survive reboot and
+# logout), then elevates to plant the CA / split-DNS / :443 redirect.
+# install.sh by itself only does the OS half.
 #
 # Env: PEPENET_HOME (default ~/.pepenet), PEPENET_REF (default linux),
 #      PEPENET_TLD (default pepe), PEPENET_PEER (default pepenet.shibpost.com:33874)
@@ -121,103 +121,133 @@ ensure_deps() {
     fi
 }
 
+# Boot daemons, not login agents: they come up at startup without a
+# session, keep running after logout, and restart if they die. The
+# process still runs as the installing user (the proxy is loopback-only
+# and must not be root). HOME is pinned so ~/.pepenet CA files resolve.
+install_file() {
+    local src="$1" dest="$2"
+    elevate cp "$src" "$dest"
+    elevate chmod 644 "$dest"
+}
+
 write_linux_units() {
-    local unitdir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-    mkdir -p "$unitdir"
-    cat > "$unitdir/pepenet-dnsd.service" <<EOF
+    local user gid tmp
+    user="$(id -un)"
+    gid="$(id -gn)"
+    tmp="$(mktemp -d)"
+    cat > "$tmp/pepenet-dnsd.service" <<EOF
 [Unit]
 Description=PepeNet DNS resolver (.$TLD)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
+Type=simple
+User=$user
+Group=$gid
+Environment=HOME=$HOME
+WorkingDirectory=$HOME_DIR
 ExecStart=$BIN_DIR/dnsd --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --coin $COIN --suffix $TLD --dns-port $DNS_PORT --tls-redirect 127.0.0.1 --peer $PEER
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-    cat > "$unitdir/pepenet-tls.service" <<EOF
+    cat > "$tmp/pepenet-tls.service" <<EOF
 [Unit]
 Description=PepeNet DANE TLS proxy (.$TLD)
-After=pepenet-dnsd.service
-Wants=pepenet-dnsd.service
+After=network-online.target pepenet-dnsd.service
+Wants=network-online.target pepenet-dnsd.service
 
 [Service]
+Type=simple
+User=$user
+Group=$gid
+Environment=HOME=$HOME
+WorkingDirectory=$HOME_DIR
 ExecStart=$BIN_DIR/pepenet-tls --tld $TLD serve --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --listen 127.0.0.1 --port $PROXY_PORT
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
-    systemctl --user daemon-reload
-    if ! systemctl --user enable --now pepenet-dnsd.service pepenet-tls.service; then
-        log "WARNING: systemd --user could not start the daemons. Run:"
-        echo "  $BIN_DIR/dnsd --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --coin $COIN --suffix $TLD --dns-port $DNS_PORT --tls-redirect 127.0.0.1 --peer $PEER"
-        echo "  $BIN_DIR/pepenet-tls --tld $TLD serve --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --listen 127.0.0.1 --port $PROXY_PORT"
-    fi
-    if have loginctl; then
-        elevate loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
-    fi
+    # drop a leftover user-unit from the first installer, if any
+    systemctl --user disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
+    install_file "$tmp/pepenet-dnsd.service" /etc/systemd/system/pepenet-dnsd.service
+    install_file "$tmp/pepenet-tls.service"  /etc/systemd/system/pepenet-tls.service
+    rm -rf "$tmp"
+    elevate systemctl daemon-reload
+    elevate systemctl enable --now pepenet-dnsd.service pepenet-tls.service
+}
+
+macos_plist() {
+    local label="$1" log="$2"
+    shift 2
+    cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$label</string>
+  <key>UserName</key><string>$(id -un)</string>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>$HOME</string>
+  </dict>
+  <key>WorkingDirectory</key><string>$HOME_DIR</string>
+  <key>ProgramArguments</key><array>
+$(for a in "$@"; do printf '    <string>%s</string>\n' "$a"; done)
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$log</string>
+  <key>StandardErrorPath</key><string>$log</string>
+</dict></plist>
+EOF
 }
 
 write_macos_agents() {
-    local dir="$HOME/Library/LaunchAgents"
-    mkdir -p "$dir"
-    cat > "$dir/com.pepenet.dnsd.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.pepenet.dnsd</string>
-  <key>ProgramArguments</key><array>
-    <string>$BIN_DIR/dnsd</string>
-    <string>--db</string><string>$HOME_DIR/$COIN.db</string>
-    <string>--store</string><string>$HOME_DIR/dns-$COIN.db</string>
-    <string>--coin</string><string>$COIN</string>
-    <string>--suffix</string><string>$TLD</string>
-    <string>--dns-port</string><string>$DNS_PORT</string>
-    <string>--tls-redirect</string><string>127.0.0.1</string>
-    <string>--peer</string><string>$PEER</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME_DIR/dnsd.log</string>
-  <key>StandardErrorPath</key><string>$HOME_DIR/dnsd.log</string>
-</dict></plist>
-EOF
-    cat > "$dir/com.pepenet.tls.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.pepenet.tls</string>
-  <key>ProgramArguments</key><array>
-    <string>$BIN_DIR/pepenet-tls</string>
-    <string>--tld</string><string>$TLD</string>
-    <string>serve</string>
-    <string>--db</string><string>$HOME_DIR/$COIN.db</string>
-    <string>--store</string><string>$HOME_DIR/dns-$COIN.db</string>
-    <string>--listen</string><string>127.0.0.1</string>
-    <string>--port</string><string>$PROXY_PORT</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME_DIR/tls.log</string>
-  <key>StandardErrorPath</key><string>$HOME_DIR/tls.log</string>
-</dict></plist>
-EOF
+    local tmp="$HOME_DIR"
+    mkdir -p "$tmp"
+    macos_plist com.pepenet.dnsd "$HOME_DIR/dnsd.log" \
+        "$BIN_DIR/dnsd" --db "$HOME_DIR/$COIN.db" --store "$HOME_DIR/dns-$COIN.db" \
+        --coin "$COIN" --suffix "$TLD" --dns-port "$DNS_PORT" \
+        --tls-redirect 127.0.0.1 --peer "$PEER" \
+        > "$tmp/com.pepenet.dnsd.plist"
+    macos_plist com.pepenet.tls "$HOME_DIR/tls.log" \
+        "$BIN_DIR/pepenet-tls" --tld "$TLD" serve \
+        --db "$HOME_DIR/$COIN.db" --store "$HOME_DIR/dns-$COIN.db" \
+        --listen 127.0.0.1 --port "$PROXY_PORT" \
+        > "$tmp/com.pepenet.tls.plist"
+    # retire the login-only LaunchAgents from the first installer
     launchctl bootout "gui/$(id -u)/com.pepenet.dnsd" >/dev/null 2>&1 || true
     launchctl bootout "gui/$(id -u)/com.pepenet.tls" >/dev/null 2>&1 || true
-    launchctl bootstrap "gui/$(id -u)" "$dir/com.pepenet.dnsd.plist"
-    launchctl bootstrap "gui/$(id -u)" "$dir/com.pepenet.tls.plist"
+    rm -f "$HOME/Library/LaunchAgents/com.pepenet.dnsd.plist" \
+          "$HOME/Library/LaunchAgents/com.pepenet.tls.plist"
+    install_file "$tmp/com.pepenet.dnsd.plist" /Library/LaunchDaemons/com.pepenet.dnsd.plist
+    install_file "$tmp/com.pepenet.tls.plist"  /Library/LaunchDaemons/com.pepenet.tls.plist
+    elevate launchctl bootout system/com.pepenet.dnsd >/dev/null 2>&1 || true
+    elevate launchctl bootout system/com.pepenet.tls >/dev/null 2>&1 || true
+    elevate launchctl bootstrap system /Library/LaunchDaemons/com.pepenet.dnsd.plist
+    elevate launchctl bootstrap system /Library/LaunchDaemons/com.pepenet.tls.plist
 }
 
 stop_services() {
     if [ "$os" = linux ]; then
+        elevate systemctl disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
+        elevate rm -f /etc/systemd/system/pepenet-tls.service /etc/systemd/system/pepenet-dnsd.service
+        elevate systemctl daemon-reload >/dev/null 2>&1 || true
         systemctl --user disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
     else
+        elevate launchctl bootout system/com.pepenet.tls >/dev/null 2>&1 || true
+        elevate launchctl bootout system/com.pepenet.dnsd >/dev/null 2>&1 || true
+        elevate rm -f /Library/LaunchDaemons/com.pepenet.tls.plist \
+                      /Library/LaunchDaemons/com.pepenet.dnsd.plist
         launchctl bootout "gui/$(id -u)/com.pepenet.tls" >/dev/null 2>&1 || true
         launchctl bootout "gui/$(id -u)/com.pepenet.dnsd" >/dev/null 2>&1 || true
+        rm -f "$HOME/Library/LaunchAgents/com.pepenet.tls.plist" \
+              "$HOME/Library/LaunchAgents/com.pepenet.dnsd.plist"
     fi
 }
 
@@ -263,7 +293,7 @@ do_setup() {
     log "ensuring the name-constrained .$TLD root"
     "$BIN_DIR/pepenet-tls" --tld "$TLD" gen-ca
 
-    log "starting user services (dnsd + pepenet-tls)"
+    log "installing boot daemons (dnsd + pepenet-tls — Restart=always, survive reboot)"
     if [ "$os" = linux ]; then
         write_linux_units
     else

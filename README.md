@@ -6,8 +6,10 @@ Architecture and the security model: [`DESIGN.md`](DESIGN.md).
 
 ## Install (one command)
 
-Clones the family, builds `dnsd` + `pepenet-tls`, starts them as user
-services, then plants the CA / split-DNS / `:443` redirect.
+Clones the family, builds `dnsd` + `pepenet-tls`, installs them as **boot
+daemons** (systemd system units / LaunchDaemons — they come back after
+reboot and stay up if they crash), then plants the CA / split-DNS /
+`:443` redirect. The process still runs as you, not root.
 
 **macOS / Linux**
 
