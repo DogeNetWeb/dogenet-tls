@@ -10,9 +10,11 @@
 
 UNAME_S := $(shell uname -s)
 
+# -std=c11 hides mkdtemp/setenv/fdopen on glibc (Ubuntu 24.04). _DEFAULT_SOURCE
+# restores POSIX.2008 without switching the dialect to gnu11. Harmless on Darwin.
 ifeq ($(UNAME_S),Darwin)
 OPENSSL ?= /opt/homebrew/opt/openssl@3
-CFLAGS  ?= -std=c11 -O2 -Wall -Wextra -I$(OPENSSL)/include
+CFLAGS  ?= -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra -I$(OPENSSL)/include
 LDFLAGS ?= -L$(OPENSSL)/lib -Wl,-rpath,$(OPENSSL)/lib -lssl -lcrypto
 else
 PKG_OPENSSL_CFLAGS := $(shell pkg-config --cflags openssl 2>/dev/null)
@@ -20,15 +22,28 @@ PKG_OPENSSL_LIBS   := $(shell pkg-config --libs openssl 2>/dev/null)
 ifeq ($(strip $(PKG_OPENSSL_LIBS)),)
 $(error OpenSSL 3 not found — install libssl-dev (Debian/Ubuntu) or openssl-devel (Fedora))
 endif
-CFLAGS  ?= -std=c11 -O2 -Wall -Wextra $(PKG_OPENSSL_CFLAGS)
+CFLAGS  ?= -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra $(PKG_OPENSSL_CFLAGS)
 LDFLAGS ?= $(PKG_OPENSSL_LIBS)
 endif
 
 # The resolver (slice 4) reuses pepenet-dns's record store + ownership oracle,
-# exactly as dnsd links them. DNS := the sibling repo; the rest mirror its Makefile.
+# exactly as dnsd links them.
+#
+# Two layouts:
+#   family siblings  pepenet-tls/ next to pepenet-dns/, pepenet-mesh/,
+#                    namespace-indexer/  (the standalone clone)
+#   desktop embed    this Makefile lives at pepenet-desktop/tls/ and those
+#                    three are submodules named dns/, mesh/, indexer/
+# Override any of DNS / IDX / NET if yours live elsewhere.
+ifneq ($(wildcard ../dns/src/dns_state.c),)
+DNS     ?= ../dns
+IDX     ?= ../indexer
+NET     ?= ../mesh
+else
 DNS     ?= ../pepenet-dns
-IDX     := $(DNS)/../namespace-indexer
-NET     := $(DNS)/../pepenet-mesh
+IDX     ?= $(DNS)/../namespace-indexer
+NET     ?= $(DNS)/../pepenet-mesh
+endif
 SECPLIB := $(IDX)/build/secp/lib/libsecp256k1.a
 NETLIB  := $(NET)/libpepenetnet.a
 
@@ -135,7 +150,7 @@ check-jitter: proxy_jitter_test
 # ThreadSanitizer build of the jitter suite. -O1 -g so TSan reports carry
 # usable frames; separate binary so the normal one stays optimized.
 proxy_jitter_tsan: test/proxy_jitter_test.c src/proxy.c src/ca.c src/dane.c
-	$(CC) -std=c11 -g -O1 -fsanitize=thread -Wall -Wextra $(filter -I%,$(CFLAGS)) \
+	$(CC) -std=c11 -D_DEFAULT_SOURCE -g -O1 -fsanitize=thread -Wall -Wextra $(filter -I%,$(CFLAGS)) \
 	    -Isrc -o $@ $^ $(LDFLAGS) -lpthread
 
 check-jitter-tsan: proxy_jitter_tsan
