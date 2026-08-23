@@ -8,6 +8,10 @@
 #
 #   irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
 #   $env:PEPENET_UNINSTALL='1'; irm …/install.ps1 | iex
+#
+# Command Prompt (cmd.exe) — irm/iex are PowerShell:
+#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+#   set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }

@@ -40,10 +40,18 @@ What `get.sh` does:
 
 First run compiles from source. Later runs `git pull` + rebuild.
 
-### Windows (PowerShell)
+### Windows
+
+PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+```
+
+Command Prompt (`cmd.exe`) — `irm` / `iex` are PowerShell cmdlets, so cmd has to call PowerShell:
+
+```bat
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 ```
 
 What `install.ps1` does:
@@ -79,10 +87,16 @@ curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh
 
 Wipe data: `rm -rf ~/.pepenet`.
 
-**Windows:**
+**Windows** — PowerShell:
 
 ```powershell
 $env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+```
+
+Command Prompt:
+
+```bat
+set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 ```
 
 Stops the process, drops Run + the scheduled task, `msiexec /x` the product. `%USERPROFILE%\.pepenet` stays.

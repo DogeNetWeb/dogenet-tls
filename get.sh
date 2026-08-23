@@ -56,8 +56,9 @@ case "$os" in
     Darwin) os=macos ;;
     Linux)  os=linux ;;
     MINGW*|MSYS*|CYGWIN*)
-        echo "pepenet-tls is POSIX. On Windows run this in PowerShell:" >&2
-        echo "  irm https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/install.ps1 | iex" >&2
+        echo "pepenet-tls is POSIX. On Windows:" >&2
+        echo "  PowerShell:  irm https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/install.ps1 | iex" >&2
+        echo "  cmd.exe:     powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/install.ps1 | iex\"" >&2
         exit 1 ;;
     *) echo "unsupported OS: $os" >&2; exit 1 ;;
 esac

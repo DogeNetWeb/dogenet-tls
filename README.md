@@ -13,7 +13,12 @@ curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh
 ```
 
 ```powershell
-# Windows — PepeNet desktop MSI + logon autostart (tls is POSIX)
+# Windows PowerShell — PepeNet desktop MSI + logon autostart (tls is POSIX)
 irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+```
+
+```bat
+:: Windows Command Prompt
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 ```
 
