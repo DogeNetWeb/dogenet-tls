@@ -4,11 +4,11 @@ Two shapes, one padlock (`https://<name>.pepe` in a stock browser):
 
 | | macOS / Linux | Windows |
 |---|---|---|
-| **One command** | `get.sh` — builds `dnsd` + `pepenet-tls`, installs **boot daemons**, plants OS trust | `install.ps1` — installs **PepeNet desktop** (MSI), starts it hidden, registers logon autostart |
-| **Always on** | systemd system units / LaunchDaemons (survive reboot and logout) | tray-resident desktop at every logon (HKCU Run + scheduled task). No session-less Windows service |
-| **Who runs the proxy** | your user, not root (loopback only) | your user (the GUI app) |
+| **One command** | `get.sh` — builds `dnsd` + `pepenet-tls`, installs **boot daemons**, plants OS trust | `install.ps1` — installs **`pepenet-web.exe` as a Windows Service**, plants CA + NRPT + PAC |
+| **Always on** | systemd system units / LaunchDaemons (survive reboot and logout) | `PepeNetWeb` service (Automatic delayed, LocalSystem, restart on fail). No GUI |
+| **Who runs the proxy** | your user, not root (loopback only) | LocalSystem; data in `%PROGRAMDATA%\PepeNet` |
 
-`pepenet-tls` is POSIX. Windows does not get `dnsd` / `pepenet-tls` as services; the in-process desktop stack is the padlock there.
+`pepenet-tls` / `dnsd` are POSIX binaries. On Windows the same engines are a headless `pepenet-web.exe` built from pepenet-desktop (no Sokol, no wallet UI).
 
 Architecture and the NameConstraints threat model: [`DESIGN.md`](DESIGN.md).
 
@@ -42,7 +42,7 @@ First run compiles from source. Later runs `git pull` + rebuild.
 
 ### Windows
 
-PowerShell:
+Needs admin (service + NRPT). PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
@@ -56,14 +56,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 
 What `install.ps1` does:
 
-1. Downloads the latest `Windows-PepeNet-*.msi` from [pepenet-desktop releases](https://github.com/PepeNetWeb/pepenet-desktop/releases).
-2. `msiexec` per-user into `%LOCALAPPDATA%\Programs\PepeNet` (no admin).
-3. Starts `pepenet.exe --background` (tray only).
-4. Registers logon autostart: HKCU `\...\Run\PepeNet` and a restarting `PepeNet` scheduled task (AtLogOn).
+1. Gets `pepenet-web.exe` — `PEPENET_WEB_EXE` if set, else a `pepenet-web` release asset, else the latest desktop MSI **if that MSI contains `pepenet-web.exe`** (linux-branch packaging; the 0.2.0 GUI-only MSI is not enough).
+2. Copies it to `%PROGRAMDATA%\PepeNet\bin`.
+3. Creates Windows Service `PepeNetWeb` (Automatic delayed, LocalSystem, restart on fail) and starts it. Data/CA live under `%PROGRAMDATA%\PepeNet\.pepenet`.
+4. Plants OS wiring: current-user Root CA, HKCU PAC, NRPT `.<tld>` → `127.0.0.1`.
 
-Then open the app and **Enable web access** (DNS & Web tab) — one UAC prompt for the NRPT `.pepe` rule. The MSI does not plant that by itself.
+No GUI, no tray, no logon required. Git-for-Windows `curl | bash` of `get.sh` will refuse and print the PowerShell line.
 
-Git-for-Windows `curl | bash` of `get.sh` will refuse and print the PowerShell line.
+Until a GitHub release ships `pepenet-web.exe`, build it from the desktop `linux` branch on MSYS2:
+
+```
+cmake --build build-win --target pepenet-web
+$env:PEPENET_WEB_EXE='…\build-win\pepenet-web.exe'
+irm …/install.ps1 | iex
+```
 
 ### Flags and environment (`get.sh`)
 
@@ -99,7 +105,7 @@ Command Prompt:
 set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 ```
 
-Stops the process, drops Run + the scheduled task, `msiexec /x` the product. `%USERPROFILE%\.pepenet` stays.
+Stops and deletes the `PepeNetWeb` service, removes NRPT + PAC. Leaves `%PROGRAMDATA%\PepeNet` data.
 
 ---
 
@@ -109,7 +115,7 @@ Stops the process, drops Run + the scheduled task, `msiexec /x` the product. `%U
 |---|---|---|
 | Linux | `/etc/systemd/system/pepenet-dnsd.service` and `pepenet-tls.service`, `User=` the installer, `Restart=always`, `WantedBy=multi-user.target` | reboot, logout, crash |
 | macOS | `/Library/LaunchDaemons/com.pepenet.{dnsd,tls}.plist` with `UserName`, `RunAtLoad`, `KeepAlive` | reboot, logout, crash |
-| Windows | HKCU Run + Task Scheduler `PepeNet` AtLogOn, `pepenet.exe --background` | logon, crash (3 restarts). Not a session-less service |
+| Windows | Service `PepeNetWeb` (`pepenet-web.exe`), Automatic delayed, LocalSystem, `sc failure` restart | reboot, logout, crash. No GUI |
 
 Linux/macOS processes still run **as you**. `HOME` is pinned so `~/.pepenet` CA files resolve when launched at boot.
 

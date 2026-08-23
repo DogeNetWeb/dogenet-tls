@@ -1,10 +1,8 @@
 # pepenet-tls Windows one-liner — irm …/install.ps1 | iex
 #
-# pepenet-tls is POSIX (systemd / LaunchDaemons). On Windows the padlock is
-# PepeNet desktop: in-process resolver + DANE proxy, tray-resident. This
-# script downloads the latest MSI, installs per-user (no admin), starts it
-# hidden, and registers it to come back at every logon (HKCU Run + a
-# restarting scheduled task).
+# Headless padlock: installs pepenet-web.exe as a Windows Service (boot,
+# LocalSystem, auto-restart), plants the name-constrained CA + NRPT + PAC.
+# That is the systemd/LaunchDaemon analogue — not the GUI.
 #
 #   irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
 #   $env:PEPENET_UNINSTALL='1'; irm …/install.ps1 | iex
@@ -12,103 +10,162 @@
 # Command Prompt (cmd.exe) — irm/iex are PowerShell:
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 #   set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+#
+# pepenet-web.exe must be in the latest desktop MSI (linux-branch packaging)
+# or set PEPENET_WEB_EXE to a built copy.
 
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
-$Owner = "PepeNetWeb"
-$Repo  = "pepenet-desktop"
-$Task  = "PepeNet"
-$RunName = "PepeNet"
-$ExeDefault = Join-Path $env:LOCALAPPDATA "Programs\PepeNet\pepenet.exe"
+$Owner   = "PepeNetWeb"
+$Repo    = "pepenet-desktop"
+$SvcName = "PepeNetWeb"
+$Tld     = "pepe"
+$PacUrl  = "http://127.0.0.1:8444/proxy.pac"
+$BinDir  = Join-Path $env:ProgramData "PepeNet\bin"
+$DataDir = Join-Path $env:ProgramData "PepeNet\.pepenet"
+$MsiExe  = Join-Path $env:LOCALAPPDATA "Programs\PepeNet\pepenet-web.exe"
 
 function Write-Step($msg) { Write-Host "==> $msg" }
 
-function Get-PepenetExe {
-    $fromReg = (Get-ItemProperty -Path "HKCU:\Software\PepeNet\Install" -Name exe -ErrorAction SilentlyContinue).exe
-    if ($fromReg -and (Test-Path -LiteralPath $fromReg)) { return $fromReg }
-    if (Test-Path -LiteralPath $ExeDefault) { return $ExeDefault }
-    return $null
+function Test-Admin {
+    $p = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Unregister-Startup {
-    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $RunName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $Task -Confirm:$false -ErrorAction SilentlyContinue
+function Assert-Admin {
+    if (Test-Admin) { return }
+    Write-Step "relaunching elevated (service + NRPT need admin)"
+    $cmd = "irm https://raw.githubusercontent.com/$Owner/pepenet-tls/linux/install.ps1 | iex"
+    if ($env:PEPENET_UNINSTALL -eq "1") { $cmd = "`$env:PEPENET_UNINSTALL='1'; $cmd" }
+    if ($env:PEPENET_WEB_EXE) { $cmd = "`$env:PEPENET_WEB_EXE='$($env:PEPENET_WEB_EXE)'; $cmd" }
+    Start-Process powershell.exe -Verb RunAs -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $cmd)
+    exit 0
 }
 
-function Register-Startup([string]$exe) {
-    $cmd = "`"$exe`" --background"
-    New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Force | Out-Null
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name $RunName -Value $cmd
+function Get-Helper {
+    $local = @(
+        (Join-Path $BinDir "install-helper.ps1"),
+        (Join-Path (Split-Path $MsiExe -Parent) "resources\install-helper.ps1")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($local) { return $local }
+    $out = Join-Path $env:TEMP "pepenet-install-helper.ps1"
+    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/$Owner/pepenet-desktop/linux/packaging/install-helper.ps1" -OutFile $out
+    return $out
+}
 
-    # At-logon task with restart-on-failure — HKCU Run is the usual path;
-    # the task is the always-on belt (sleep/hibernate, crash).
-    Unregister-ScheduledTask -TaskName $Task -Confirm:$false -ErrorAction SilentlyContinue
-    $action  = New-ScheduledTaskAction -Execute $exe -Argument "--background"
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-    $settings = New-ScheduledTaskSettingsSet `
-        -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries `
-        -RestartCount 3 `
-        -RestartInterval (New-TimeSpan -Minutes 1) `
-        -ExecutionTimeLimit ([TimeSpan]::Zero) `
-        -StartWhenAvailable
-    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
-    Register-ScheduledTask -TaskName $Task -Action $action -Trigger $trigger `
-        -Settings $settings -Principal $principal -Force | Out-Null
+function Install-OsWiring([string]$cert) {
+    if (Test-Path $cert) {
+        Write-Step "trusting the .$Tld root in the current-user store"
+        & certutil -user -addstore -f Root $cert | Out-Null
+    } else {
+        Write-Warning "CA file not ready yet ($cert) — start the service, then re-run or Enable web access later"
+    }
+    Write-Step "PAC $PacUrl (HKCU)"
+    $inet = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    $cur = (Get-ItemProperty $inet -Name AutoConfigURL -ErrorAction SilentlyContinue).AutoConfigURL
+    if ($cur -and $cur -ne $PacUrl) {
+        Write-Host "  AutoConfigURL is foreign ($cur) — leaving it"
+    } else {
+        New-Item -Path $inet -Force | Out-Null
+        Set-ItemProperty -Path $inet -Name AutoConfigURL -Value $PacUrl
+    }
+    $helper = Get-Helper
+    Write-Step "NRPT .$Tld -> 127.0.0.1 (elevated helper)"
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $helper -Action install -Tld $Tld
+}
+
+function Uninstall-OsWiring {
+    $helper = Get-Helper
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $helper -Action uninstall -Tld $Tld
+    $inet = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    $cur = (Get-ItemProperty $inet -Name AutoConfigURL -ErrorAction SilentlyContinue).AutoConfigURL
+    if ($cur -eq $PacUrl) { Remove-ItemProperty -Path $inet -Name AutoConfigURL -ErrorAction SilentlyContinue }
+}
+
+function Get-WebExeFromRelease {
+    Write-Step "fetching latest $Owner/$Repo Windows build"
+    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Owner/$Repo/releases/latest" -Headers @{ "User-Agent" = "pepenet-web-installer" }
+    $zip = $rel.assets | Where-Object { $_.name -match '(?i)pepenet-web.*\.(zip|exe)$' } | Select-Object -First 1
+    if ($zip) {
+        $path = Join-Path $env:TEMP $zip.name
+        Invoke-WebRequest -UseBasicParsing -Uri $zip.browser_download_url -OutFile $path
+        if ($path -like "*.zip") {
+            $dest = Join-Path $env:TEMP "pepenet-web-unpack"
+            if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+            Expand-Archive $path $dest
+            return Get-ChildItem $dest -Recurse -Filter pepenet-web.exe | Select-Object -First 1 -ExpandProperty FullName
+        }
+        return $path
+    }
+    $msi = $rel.assets | Where-Object { $_.name -match '(?i)windows.*\.msi$' } | Select-Object -First 1
+    if (-not $msi) { throw "no Windows MSI or pepenet-web asset on $($rel.html_url)" }
+    $msiPath = Join-Path $env:TEMP $msi.name
+    Write-Step "downloading $($msi.name) (need pepenet-web.exe inside)"
+    Invoke-WebRequest -UseBasicParsing -Uri $msi.browser_download_url -OutFile $msiPath
+    Write-Step "installing per-user MSI (vehicle for pepenet-web.exe)"
+    $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msiPath`"", "/qn", "/norestart") -Wait -PassThru
+    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "msiexec /i exited $($p.ExitCode)" }
+    if (-not (Test-Path $MsiExe)) {
+        throw @"
+this release's MSI has no pepenet-web.exe (GUI-only).
+Build the linux-branch desktop tree:
+  cmake --build build-win --target pepenet-web
+then: `$env:PEPENET_WEB_EXE='C:\path\pepenet-web.exe'; irm … | iex
+"@
+    }
+    return $MsiExe
 }
 
 function Uninstall-Pepenet {
-    Write-Step "stopping PepeNet"
-    Get-Process -Name pepenet -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Unregister-Startup
-
-    $uninst = @()
-    $uninst += Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue
-    $uninst += Get-ChildItem "HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue
-    $hit = $uninst | ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
-        Where-Object { $_.DisplayName -like "PepeNet*" } | Select-Object -First 1
-    if ($hit -and $hit.PSChildName) {
-        Write-Step "uninstalling MSI"
-        $p = Start-Process msiexec.exe -ArgumentList @("/x", $hit.PSChildName, "/qn", "/norestart") -Wait -PassThru
-        if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
-            Write-Warning "msiexec /x exited $($p.ExitCode)"
-        }
-    } else {
-        Write-Host "no PepeNet MSI product found (startup entries already cleared)"
+    Assert-Admin
+    Write-Step "stopping service $SvcName"
+    if (Get-Service -Name $SvcName -ErrorAction SilentlyContinue) {
+        Stop-Service -Name $SvcName -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        & sc.exe delete $SvcName | Out-Null
     }
-    Write-Host "done. %USERPROFILE%\.pepenet left in place."
+    Uninstall-OsWiring
+    Write-Host "left $DataDir (chain db). binaries in $BinDir."
 }
 
 function Install-Pepenet {
-    Write-Step "fetching latest $Owner/$Repo Windows MSI"
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Owner/$Repo/releases/latest" -Headers @{ "User-Agent" = "pepenet-tls-installer" }
-    $asset = $rel.assets | Where-Object { $_.name -match '(?i)windows.*\.msi$' } | Select-Object -First 1
-    if (-not $asset) { throw "no Windows MSI on $($rel.html_url) — a desktop release has to ship one" }
-    $msi = Join-Path $env:TEMP $asset.name
-    Write-Step "downloading $($asset.name) ($([math]::Round($asset.size/1MB, 1)) MB)"
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $msi -UseBasicParsing
+    Assert-Admin
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $src = $env:PEPENET_WEB_EXE
+    if (-not $src -or -not (Test-Path $src)) { $src = Get-WebExeFromRelease }
+    Write-Step "installing $src -> $BinDir"
+    Copy-Item -Force $src (Join-Path $BinDir "pepenet-web.exe")
+    $helperSrc = Join-Path (Split-Path $src) "install-helper.ps1"
+    if (Test-Path $helperSrc) { Copy-Item -Force $helperSrc (Join-Path $BinDir "install-helper.ps1") }
+    $exe = Join-Path $BinDir "pepenet-web.exe"
 
-    Write-Step "installing per-user (no admin)"
-    $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/norestart") -Wait -PassThru
-    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
-        throw "msiexec /i exited $($p.ExitCode)"
+    Write-Step "Windows Service $SvcName (Automatic, LocalSystem, restart on fail)"
+    if (Get-Service -Name $SvcName -ErrorAction SilentlyContinue) {
+        Stop-Service $SvcName -Force -ErrorAction SilentlyContinue
+        & sc.exe delete $SvcName | Out-Null
+        Start-Sleep -Seconds 1
     }
+    New-Service -Name $SvcName -DisplayName "PepeNet web (DNS + DANE proxy)" `
+        -BinaryPathName "`"$exe`"" -StartupType Automatic | Out-Null
+    & sc.exe failure $SvcName reset= 86400 actions= restart/5000/restart/5000/restart/5000 | Out-Null
+    & sc.exe config $SvcName start= delayed-auto | Out-Null
+    Start-Service $SvcName
 
-    $exe = Get-PepenetExe
-    if (-not $exe) { throw "pepenet.exe not found after MSI (expected $ExeDefault)" }
-
-    Write-Step "registering logon autostart (tray --background)"
-    Register-Startup $exe
-
-    Write-Step "starting now"
-    Get-Process -Name pepenet -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Process -FilePath $exe -ArgumentList "--background"
+    $cert = Join-Path $DataDir "pepenet-root-$Tld.crt"
+    Write-Step "waiting for CA $cert"
+    $ok = $false
+    foreach ($i in 1..20) {
+        if (Test-Path $cert) { $ok = $true; break }
+        Start-Sleep -Seconds 1
+    }
+    Install-OsWiring $cert
+    if (-not $ok) { Write-Warning "service is up but CA not on disk yet — check: Get-Service $SvcName" }
 
     Write-Host ""
-    Write-Host "PepeNet $($rel.tag_name) is installed and set to start at logon."
-    Write-Host "  $exe --background"
-    Write-Host "Enable web access in the app (DNS & Web) for the .pepe padlock."
+    Write-Host "PepeNet web is a boot service ($SvcName)."
+    Write-Host "  $exe"
+    Write-Host "  data $DataDir"
     Write-Host "Uninstall: `$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
 }
 

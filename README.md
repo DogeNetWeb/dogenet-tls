@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh
 ```
 
 ```powershell
-# Windows PowerShell — PepeNet desktop MSI + logon autostart (tls is POSIX)
+# Windows PowerShell — pepenet-web Windows Service (headless padlock)
 irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
 ```
 
