@@ -76,7 +76,7 @@ irm …/install.ps1 | iex
 | | Default | Meaning |
 |---|---|---|
 | `--tld pepe\|doge` / `PEPENET_TLD` | `pepe` | one TLD per box |
-| `--peer host:port` / `PEPENET_PEER` | `pepenet.shibpost.com:33874` (pep) or `:22556` (doge) | chain peer `dnsd` dials |
+| `--peer host:port` / `PEPENET_PEER` | pep: `pepenet.shibpost.com:33874,net.pepecoin.services:33874`; doge: `pepenet.shibpost.com:22556` | PepeNet seeds `dnsd` dials (comma-separated) |
 | `--ref` / `PEPENET_REF` | `linux` | git branch/tag to clone |
 | `--home` / `PEPENET_HOME` | `~/.pepenet` | data, bins, source |
 | `PEPENET_ORG` | `PepeNetWeb` | GitHub org |
@@ -259,7 +259,8 @@ Serve by hand:
 ```sh
 dnsd --db ~/.pepenet/pep.db --store ~/.pepenet/dns-pep.db \
      --coin pep --suffix pepe --dns-port 15353 \
-     --tls-redirect 127.0.0.1 --peer pepenet.shibpost.com:33874
+     --tls-redirect 127.0.0.1 \
+     --peer pepenet.shibpost.com:33874 --peer net.pepecoin.services:33874
 ./pepenet-tls --tld pepe serve --db ~/.pepenet/pep.db --store ~/.pepenet/dns-pep.db
 ```
 

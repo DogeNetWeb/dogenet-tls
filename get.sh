@@ -12,7 +12,8 @@
 # install.sh by itself only does the OS half.
 #
 # Env: PEPENET_HOME (default ~/.pepenet), PEPENET_REF (default linux),
-#      PEPENET_TLD (default pepe), PEPENET_PEER (default pepenet.shibpost.com:33874)
+#      PEPENET_TLD (default pepe), PEPENET_PEER (comma-separated host:port;
+#      pep default pepenet.shibpost.com:33874,net.pepecoin.services:33874)
 #
 # Windows: install.ps1 (irm … | iex) — pepenet-tls is POSIX; the padlock
 # there is pepenet-desktop.
@@ -46,7 +47,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 case "$TLD" in
-    pepe) COIN=pep;  PEER="${PEER:-pepenet.shibpost.com:33874}" ;;
+    pepe) COIN=pep;  PEER="${PEER:-pepenet.shibpost.com:33874,net.pepecoin.services:33874}" ;;
     doge) COIN=doge; PEER="${PEER:-pepenet.shibpost.com:22556}" ;;
     *) echo "TLD must be pepe or doge" >&2; exit 2 ;;
 esac
@@ -133,10 +134,16 @@ install_file() {
 }
 
 write_linux_units() {
-    local user gid tmp
+    local user gid tmp flags="" p
     user="$(id -un)"
     gid="$(id -gn)"
     tmp="$(mktemp -d)"
+    local IFS=,
+    for p in $PEER; do
+        [ -n "$p" ] || continue
+        flags="$flags --peer $p"
+    done
+    unset IFS
     cat > "$tmp/pepenet-dnsd.service" <<EOF
 [Unit]
 Description=PepeNet DNS resolver (.$TLD)
@@ -149,7 +156,7 @@ User=$user
 Group=$gid
 Environment=HOME=$HOME
 WorkingDirectory=$HOME_DIR
-ExecStart=$BIN_DIR/dnsd --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --coin $COIN --suffix $TLD --dns-port $DNS_PORT --tls-redirect 127.0.0.1 --peer $PEER
+ExecStart=$BIN_DIR/dnsd --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --coin $COIN --suffix $TLD --dns-port $DNS_PORT --tls-redirect 127.0.0.1$flags
 Restart=always
 RestartSec=5
 
@@ -209,12 +216,19 @@ EOF
 }
 
 write_macos_agents() {
-    local tmp="$HOME_DIR"
+    local tmp="$HOME_DIR" p
     mkdir -p "$tmp"
+    local dnsd_args=( "$BIN_DIR/dnsd" --db "$HOME_DIR/$COIN.db" --store "$HOME_DIR/dns-$COIN.db"
+                      --coin "$COIN" --suffix "$TLD" --dns-port "$DNS_PORT"
+                      --tls-redirect 127.0.0.1 )
+    local IFS=,
+    for p in $PEER; do
+        [ -n "$p" ] || continue
+        dnsd_args+=( --peer "$p" )
+    done
+    unset IFS
     macos_plist com.pepenet.dnsd "$HOME_DIR/dnsd.log" \
-        "$BIN_DIR/dnsd" --db "$HOME_DIR/$COIN.db" --store "$HOME_DIR/dns-$COIN.db" \
-        --coin "$COIN" --suffix "$TLD" --dns-port "$DNS_PORT" \
-        --tls-redirect 127.0.0.1 --peer "$PEER" \
+        "${dnsd_args[@]}" \
         > "$tmp/com.pepenet.dnsd.plist"
     macos_plist com.pepenet.tls "$HOME_DIR/tls.log" \
         "$BIN_DIR/pepenet-tls" --tld "$TLD" serve \
