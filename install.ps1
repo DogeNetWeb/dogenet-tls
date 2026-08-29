@@ -109,7 +109,7 @@ function Get-WebExeFromRelease {
     if (-not (Test-Path $MsiExe)) {
         throw @"
 this release's MSI has no pepenet-web.exe (GUI-only).
-Build the linux-branch desktop tree:
+Build pepenet-desktop:
   cmake --build build-win --target pepenet-web
 then: `$env:PEPENET_WEB_EXE='C:\path\pepenet-web.exe'; irm … | iex
 "@
