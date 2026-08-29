@@ -181,7 +181,7 @@ Elevation: already-root, else **pkexec if present, else sudo** (passwordless-sud
 2. System store: `/usr/local/share/ca-certificates/pepenet-<tld>.crt` + `update-ca-certificates` (Debian/Ubuntu) or `update-ca-trust` (Fedora). Chromium/Firefox-with-enterprise-roots read this via p11-kit.
 3. systemd-resolved **split-DNS** on dummy `pn-<tld>` (not `lo`): `~<tld>` → `127.0.0.1:15353`. Never a global `DNS=` — that would send every name to dnsd. `lo` fails on NetworkManager desktops (`network1.service not found`).
 4. Optional nftables table `pepenet-<tld>`: output-hook redirect `127.0.0.1:443 → :8443`. Best-effort; PAC still works if nft is missing.
-5. Firefox prefs (deb `~/.mozilla/firefox` **and** Snap `~/snap/firefox/common/.mozilla/firefox`): `enterprise_roots` plus `network.trr.excluded-domains` for the TLD (DoH would NXDOMAIN `.pepe` at Cloudflare). Fully quit the Snap to apply.
+5. Firefox: plant the PEM in each profile NSS db; write `user.js` (`enterprise_roots`, TRR exclude, `doh-rollout.mode=0`); Snap also gets `/etc/firefox/policies/policies.json` (Certificates.Install + DNSOverHTTPS ExcludedDomains) with the cert copied under `/etc/firefox/policies/certificates/` so the sandbox can read it. Fully quit the Snap to apply.
 
 Persisted by `get.sh` as `/etc/systemd/system/pepenet-web-<tld>.service` from `install-linux.sh` (resolved + nft at boot). The **proxy daemons** are the separate `pepenet-dnsd` / `pepenet-tls` units.
 

@@ -210,32 +210,96 @@ FF_MARK="// pepenet-tls: trust OS roots (incl. the .$TLD root CA)"
 firefox_install() {
     n=0
     for pd in "$RHOME/.mozilla/firefox" \
-              "$RHOME/snap/firefox/common/.mozilla/firefox"; do
+              "$RHOME/snap/firefox/common/.mozilla/firefox" \
+              "$RHOME/snap/firefox/current/.mozilla/firefox"; do
         [ -d "$pd" ] || continue
         for prof in "$pd"/*/; do
             [ -d "$prof" ] || continue
             [ -f "${prof}prefs.js" ] || [ -f "${prof}cert9.db" ] || continue
             uj="${prof}user.js"
-            if ! grep -qs 'security.enterprise_roots.enabled' "$uj" 2>/dev/null; then
-                printf '%s\nuser_pref("security.enterprise_roots.enabled", true);\n' "$FF_MARK" >> "$uj"
-            fi
-            if ! grep -qs 'network.trr.excluded-domains' "$uj" 2>/dev/null; then
+            grep -qs 'pepenet-tls: trust OS roots' "$uj" 2>/dev/null || printf '%s\n' "$FF_MARK" >> "$uj"
+            grep -qs 'security.enterprise_roots.enabled' "$uj" 2>/dev/null || \
+                printf 'user_pref("security.enterprise_roots.enabled", true);\n' >> "$uj"
+            grep -qs 'network.trr.excluded-domains' "$uj" 2>/dev/null || \
                 printf 'user_pref("network.trr.excluded-domains", "%s");\n' "$TLD" >> "$uj"
-            fi
+            # doh-rollout.mode=2 (TRR first) is set by the Snap addon and
+            # NXDOMAINs .pepe at Cloudflare; 0 stops it from forcing TRR.
+            grep -qs 'doh-rollout.mode' "$uj" 2>/dev/null || \
+                printf 'user_pref("doh-rollout.mode", 0);\n' >> "$uj"
             chown "$RUSER:" "$uj" 2>/dev/null || true
             n=$((n + 1))
         done
     done
+    firefox_policies
     if [ "$n" -eq 0 ]; then
-        echo "   (no Firefox profiles — skipping prefs; Snap still needs a quit/reopen after install-ca)"
+        echo "   (no Firefox profiles yet — policies.json still planted for Snap)"
     else
-        echo "   Firefox: enterprise_roots + TRR exclude .$TLD in $n profile(s) — fully quit Firefox to apply"
+        echo "   Firefox: $n profile(s) + /etc/firefox/policies — fully quit Firefox to apply"
     fi
+}
+
+# Snap Firefox can read /etc/firefox (firefox:etc-firefox) but NOT the host
+# p11-kit store. Copy the PEM in there and exclude .$TLD from DoH.
+firefox_policies() {
+    [ -n "$CERT" ] && [ -f "$CERT" ] || return 0
+    mkdir -p /etc/firefox/policies/certificates
+    cp "$CERT" "/etc/firefox/policies/certificates/pepenet-$TLD.crt"
+    chmod 644 "/etc/firefox/policies/certificates/pepenet-$TLD.crt"
+    POL=/etc/firefox/policies/policies.json
+    CERT_POL="/etc/firefox/policies/certificates/pepenet-$TLD.crt"
+    if command -v python3 >/dev/null 2>&1; then
+        CERT_POL="$CERT_POL" TLD="$TLD" POL="$POL" python3 - <<'PY'
+import json, os
+path, cert, tld = os.environ["POL"], os.environ["CERT_POL"], os.environ["TLD"]
+data = {"policies": {}}
+if os.path.exists(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except Exception:
+        data = {"policies": {}}
+p = data.setdefault("policies", {})
+certs = p.setdefault("Certificates", {})
+certs["ImportEnterpriseRoots"] = True
+inst = certs.setdefault("Install", [])
+if cert not in inst:
+    inst.append(cert)
+doh = p.setdefault("DNSOverHTTPS", {})
+if "Enabled" not in doh:
+    doh["Enabled"] = True
+ex = doh.setdefault("ExcludedDomains", [])
+if tld not in ex:
+    ex.append(tld)
+doh["Fallback"] = True
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+    else
+        cat > "$POL" <<EOF
+{
+  "policies": {
+    "Certificates": {
+      "ImportEnterpriseRoots": true,
+      "Install": ["$CERT_POL"]
+    },
+    "DNSOverHTTPS": {
+      "Enabled": true,
+      "ExcludedDomains": ["$TLD"],
+      "Fallback": true
+    }
+  }
+}
+EOF
+    fi
+    echo "   Snap Firefox policies: $POL"
 }
 
 firefox_uninstall() {
     for pd in "$RHOME/.mozilla/firefox" \
-              "$RHOME/snap/firefox/common/.mozilla/firefox"; do
+              "$RHOME/snap/firefox/common/.mozilla/firefox" \
+              "$RHOME/snap/firefox/current/.mozilla/firefox"; do
         [ -d "$pd" ] || continue
         for prof in "$pd"/*/; do
             uj="${prof}user.js"
@@ -243,8 +307,46 @@ firefox_uninstall() {
             sed -i '/pepenet-tls: trust OS roots/d' "$uj" 2>/dev/null || true
             sed -i '/security.enterprise_roots.enabled/d' "$uj" 2>/dev/null || true
             sed -i "/network.trr.excluded-domains/d" "$uj" 2>/dev/null || true
+            sed -i '/doh-rollout.mode/d' "$uj" 2>/dev/null || true
         done
     done
+    rm -f "/etc/firefox/policies/certificates/pepenet-$TLD.crt"
+    POL=/etc/firefox/policies/policies.json
+    if [ -f "$POL" ] && command -v python3 >/dev/null 2>&1; then
+        CERT_POL="/etc/firefox/policies/certificates/pepenet-$TLD.crt" TLD="$TLD" POL="$POL" python3 - <<'PY'
+import json, os
+path, cert, tld = os.environ["POL"], os.environ["CERT_POL"], os.environ["TLD"]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    raise SystemExit
+p = data.get("policies") or {}
+certs = p.get("Certificates") or {}
+inst = [x for x in certs.get("Install") or [] if x != cert]
+if inst:
+    certs["Install"] = inst
+    p["Certificates"] = certs
+else:
+    p.pop("Certificates", None)
+doh = p.get("DNSOverHTTPS") or {}
+ex = [x for x in doh.get("ExcludedDomains") or [] if x != tld]
+if ex:
+    doh["ExcludedDomains"] = ex
+    p["DNSOverHTTPS"] = doh
+elif doh:
+    doh.pop("ExcludedDomains", None)
+    if list(doh.keys()) <= {"Enabled", "Fallback"}:
+        p.pop("DNSOverHTTPS", None)
+data["policies"] = p
+if p:
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+else:
+    os.remove(path)
+PY
+    fi
 }
 
 ensure_certutil() {

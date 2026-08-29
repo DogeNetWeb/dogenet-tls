@@ -180,6 +180,8 @@ int trust_install(const char *certpath) {
     nss_firefox_profiles(ff, nick, certpath, 1);
     snprintf(ff, sizeof ff, "%s/snap/firefox/common/.mozilla/firefox", home);
     nss_firefox_profiles(ff, nick, certpath, 1);
+    snprintf(ff, sizeof ff, "%s/snap/firefox/current/.mozilla/firefox", home);
+    nss_firefox_profiles(ff, nick, certpath, 1);
     return 1;
 }
 
@@ -195,6 +197,8 @@ int trust_uninstall(const char *certpath, const char *cn) {
     snprintf(ff, sizeof ff, "%s/.mozilla/firefox", home);
     nss_firefox_profiles(ff, nick, NULL, 0);
     snprintf(ff, sizeof ff, "%s/snap/firefox/common/.mozilla/firefox", home);
+    nss_firefox_profiles(ff, nick, NULL, 0);
+    snprintf(ff, sizeof ff, "%s/snap/firefox/current/.mozilla/firefox", home);
     nss_firefox_profiles(ff, nick, NULL, 0);
     return 1;
 }
