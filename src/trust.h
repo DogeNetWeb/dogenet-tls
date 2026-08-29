@@ -2,12 +2,12 @@
  *
  * macOS: login keychain via `security`; the GUI auth prompt IS the operator's
  * deliberate consent to trust the `.doge`/`.pepe` root (DESIGN.md §2).
- * Linux: unprivileged NSS db (`certutil` → `~/.pki/nssdb`). The system store
- * (`/usr/local/share/ca-certificates` + `update-ca-certificates`) is the
- * privileged helper's job — there is no keychain GUI on Linux, so polkit
- * plus the in-app consent card is consent. `certutil` missing is not a
- * failure: Chromium/Firefox then pick the root up from p11-kit once the
- * helper has planted it.
+ * Linux: unprivileged NSS db (`certutil` → `~/.pki/nssdb`, Snap Chromium's
+ * private db, Firefox profile cert9.db). The system store (`/usr/local/share
+ * /ca-certificates` + `update-ca-certificates`) is the privileged helper's
+ * job — there is no keychain GUI on Linux, so polkit plus the in-app consent
+ * card is consent. `certutil` missing is not a hard failure for curl (p11-kit
+ * system store), but Snap Chromium/Firefox will show CERT_AUTHORITY_INVALID.
  */
 #ifndef PEPENET_TLS_TRUST_H
 #define PEPENET_TLS_TRUST_H

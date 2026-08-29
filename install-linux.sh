@@ -159,9 +159,9 @@ Wants=systemd-resolved.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=$SPLIT_FILE
--ExecStart=/usr/sbin/nft -f $NFT_FILE
+ExecStart=-/usr/sbin/nft -f $NFT_FILE
 ExecStop=$SPLIT_FILE stop
--ExecStop=/usr/sbin/nft delete table ip pepenet-$TLD
+ExecStop=-/usr/sbin/nft delete table ip pepenet-$TLD
 
 [Install]
 WantedBy=multi-user.target
@@ -169,9 +169,8 @@ EOF
 }
 
 # nft is best-effort: a missing binary, a kernel without nat, or a policy
-# that forbids output-hook redirect must not fail the install. The unit's
-# ExecStart for nft is similarly allowed to fail via `-` in the unit — we
-# write a real ExecStart and tolerate failure at enable-time below.
+# that forbids output-hook redirect must not fail the install. systemd wants
+# ExecStart=-/path (dash on the VALUE), not -ExecStart=.
 write_nft() {
     mkdir -p "$NFT_DIR"
     cat > "$NFT_FILE" <<EOF
@@ -203,46 +202,66 @@ apply_runtime() {
     fi
 }
 
-# ── Firefox enterprise-roots (p11-kit reads the SYSTEM store on Linux) ────────
+# ── Firefox prefs (deb + snap). Snap Firefox ignores host p11-kit; we also
+# plant the PEM into the profile NSS db via install-ca. TRR/DoH would skip
+# pn-<tld> and NXDOMAIN .pepe at Cloudflare — exclude the TLD from TRR. ────
 FF_MARK="// pepenet-tls: trust OS roots (incl. the .$TLD root CA)"
-FF_PREF='user_pref("security.enterprise_roots.enabled", true);'
-
-firefox_profiles() {
-    echo "$RHOME/.mozilla/firefox"
-}
 
 firefox_install() {
-    pd="$(firefox_profiles)"
-    [ -d "$pd" ] || { echo "   (no Firefox profiles — skipping)"; return 0; }
     n=0
-    for prof in "$pd"/*/; do
-        [ -d "$prof" ] || continue
-        uj="${prof}user.js"
-        if grep -qs 'security.enterprise_roots.enabled' "$uj" 2>/dev/null; then
-            continue
-        fi
-        printf '%s\n%s\n' "$FF_MARK" "$FF_PREF" >> "$uj"
-        chown "$RUSER:" "$uj" 2>/dev/null || true
-        n=$((n + 1))
+    for pd in "$RHOME/.mozilla/firefox" \
+              "$RHOME/snap/firefox/common/.mozilla/firefox"; do
+        [ -d "$pd" ] || continue
+        for prof in "$pd"/*/; do
+            [ -d "$prof" ] || continue
+            [ -f "${prof}prefs.js" ] || [ -f "${prof}cert9.db" ] || continue
+            uj="${prof}user.js"
+            if ! grep -qs 'security.enterprise_roots.enabled' "$uj" 2>/dev/null; then
+                printf '%s\nuser_pref("security.enterprise_roots.enabled", true);\n' "$FF_MARK" >> "$uj"
+            fi
+            if ! grep -qs 'network.trr.excluded-domains' "$uj" 2>/dev/null; then
+                printf 'user_pref("network.trr.excluded-domains", "%s");\n' "$TLD" >> "$uj"
+            fi
+            chown "$RUSER:" "$uj" 2>/dev/null || true
+            n=$((n + 1))
+        done
     done
-    echo "   enabled enterprise roots in $n Firefox profile(s) — restart Firefox to apply"
+    if [ "$n" -eq 0 ]; then
+        echo "   (no Firefox profiles — skipping prefs; Snap still needs a quit/reopen after install-ca)"
+    else
+        echo "   Firefox: enterprise_roots + TRR exclude .$TLD in $n profile(s) — fully quit Firefox to apply"
+    fi
 }
 
 firefox_uninstall() {
-    pd="$(firefox_profiles)"
-    [ -d "$pd" ] || return 0
-    for prof in "$pd"/*/; do
-        uj="${prof}user.js"
-        [ -f "$uj" ] || continue
-        sed -i '/pepenet-tls: trust OS roots/,+1d' "$uj" 2>/dev/null || true
+    for pd in "$RHOME/.mozilla/firefox" \
+              "$RHOME/snap/firefox/common/.mozilla/firefox"; do
+        [ -d "$pd" ] || continue
+        for prof in "$pd"/*/; do
+            uj="${prof}user.js"
+            [ -f "$uj" ] || continue
+            sed -i '/pepenet-tls: trust OS roots/d' "$uj" 2>/dev/null || true
+            sed -i '/security.enterprise_roots.enabled/d' "$uj" 2>/dev/null || true
+            sed -i "/network.trr.excluded-domains/d" "$uj" 2>/dev/null || true
+        done
     done
 }
 
+ensure_certutil() {
+    command -v certutil >/dev/null 2>&1 && return 0
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "   installing libnss3-tools (certutil) so Snap Chromium/Firefox can trust the root"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y libnss3-tools >/dev/null || true
+    fi
+    command -v certutil >/dev/null 2>&1
+}
+
 do_install() {
-    echo "==> 1/4 trusting the name-constrained .$TLD root (nssdb as $RUSER)"
+    echo "==> 1/4 trusting the name-constrained .$TLD root (nssdb as $RUSER, incl. Snap)"
+    ensure_certutil || echo "   [WARN] certutil still missing; Snap Chromium will show CERT_AUTHORITY_INVALID" >&2
     if [ -x "$BIN" ]; then
         sudo -u "$RUSER" env HOME="$RHOME" "$BIN" --tld "$TLD" install-ca || \
-            echo "   [WARN] nssdb install failed (certutil missing?); system store still planted" >&2
+            echo "   [WARN] nssdb install failed; system store still planted" >&2
     else
         echo "   (no $BIN — skipping nssdb; gen-ca + install-ca later if you want Chromium's user db)"
     fi

@@ -177,11 +177,11 @@ Run as root. Unprivileged CA step drops to `$SUDO_USER`.
 
 Elevation: already-root, else **pkexec if present, else sudo** (passwordless-sudo boxes that do not ship pkexec).
 
-1. `install-ca` → `~/.pki/nssdb` via `certutil` if `libnss3-tools` is installed (missing certutil is a no-op).
+1. `install-ca` → `~/.pki/nssdb` **and** Snap Chromium/Firefox NSS dbs via `certutil` (`libnss3-tools`; get.sh installs it). Missing certutil: curl still works (system store); Snap browsers show `CERT_AUTHORITY_INVALID`.
 2. System store: `/usr/local/share/ca-certificates/pepenet-<tld>.crt` + `update-ca-certificates` (Debian/Ubuntu) or `update-ca-trust` (Fedora). Chromium/Firefox-with-enterprise-roots read this via p11-kit.
 3. systemd-resolved **split-DNS** on dummy `pn-<tld>` (not `lo`): `~<tld>` → `127.0.0.1:15353`. Never a global `DNS=` — that would send every name to dnsd. `lo` fails on NetworkManager desktops (`network1.service not found`).
 4. Optional nftables table `pepenet-<tld>`: output-hook redirect `127.0.0.1:443 → :8443`. Best-effort; PAC still works if nft is missing.
-5. Firefox `~/.mozilla/firefox/*/user.js` enterprise-roots pref.
+5. Firefox prefs (deb `~/.mozilla/firefox` **and** Snap `~/snap/firefox/common/.mozilla/firefox`): `enterprise_roots` plus `network.trr.excluded-domains` for the TLD (DoH would NXDOMAIN `.pepe` at Cloudflare). Fully quit the Snap to apply.
 
 Persisted by `get.sh` as `/etc/systemd/system/pepenet-web-<tld>.service` from `install-linux.sh` (resolved + nft at boot). The **proxy daemons** are the separate `pepenet-dnsd` / `pepenet-tls` units.
 
@@ -246,7 +246,7 @@ macOS: Homebrew `openssl@3` (Makefile pins `/opt/homebrew/opt/openssl@3`). Syste
 
 Override: `make DNS=/path IDX=/path NET=/path pepenet-tls`.
 
-`libnss3-tools` (`certutil`) is optional.
+`libnss3-tools` (`certutil`) is required for Snap Chromium/Firefox to trust the root. `get.sh` installs it.
 
 OS wiring from a checkout (daemons **not** started):
 

@@ -114,7 +114,7 @@ ensure_deps() {
     [ ${#missing[@]} -eq 0 ] && return 0
     log "missing: ${missing[*]}"
     if [ "$os" = linux ] && have apt-get; then
-        elevate apt-get install -y git build-essential cmake pkg-config libssl-dev libsqlite3-dev
+        elevate apt-get install -y git build-essential cmake pkg-config libssl-dev libsqlite3-dev libnss3-tools
     elif [ "$os" = macos ]; then
         have brew || die "install Homebrew, then: brew install git cmake pkg-config openssl@3 sqlite"
         brew install git cmake pkg-config openssl@3 sqlite
