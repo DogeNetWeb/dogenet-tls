@@ -9,16 +9,16 @@ Architecture and the security model: [`DESIGN.md`](DESIGN.md).
 
 ```sh
 # macOS / Linux — padlock daemons at boot
-curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash
 ```
 
 ```powershell
 # Windows PowerShell — pepenet-web Windows Service (headless padlock)
-irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex
 ```
 
 ```bat
 :: Windows Command Prompt
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
 ```
 

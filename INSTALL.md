@@ -12,7 +12,7 @@ Two shapes, one padlock (`https://<name>.pepe` in a stock browser):
 
 Architecture and the NameConstraints threat model: [`DESIGN.md`](DESIGN.md).
 
-These one-liners currently track the **`linux` branch**. After that merges to `main`, switch the URL path from `linux` to `main`.
+These one-liners track **`main`**.
 
 ---
 
@@ -21,12 +21,12 @@ These one-liners currently track the **`linux` branch**. After that merges to `m
 ### macOS and Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash
 ```
 
 ```sh
 # Dogecoin / .doge instead of Pepecoin / .pepe
-curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash -s -- --tld doge
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash -s -- --tld doge
 ```
 
 What `get.sh` does:
@@ -45,25 +45,25 @@ First run compiles from source. Later runs `git pull` + rebuild.
 Needs admin (service + NRPT). PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex
 ```
 
 Command Prompt (`cmd.exe`) — `irm` / `iex` are PowerShell cmdlets, so cmd has to call PowerShell:
 
 ```bat
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
 ```
 
 What `install.ps1` does:
 
-1. Gets `pepenet-web.exe` — `PEPENET_WEB_EXE` if set, else a `pepenet-web` release asset, else the latest desktop MSI **if that MSI contains `pepenet-web.exe`** (linux-branch packaging; the 0.2.0 GUI-only MSI is not enough).
+1. Gets `pepenet-web.exe` — `PEPENET_WEB_EXE` if set, else a `pepenet-web` release asset, else the latest desktop MSI **if that MSI contains `pepenet-web.exe`** (the 0.2.0 GUI-only MSI is not enough).
 2. Copies it to `%PROGRAMDATA%\PepeNet\bin`.
 3. Creates Windows Service `PepeNetWeb` (Automatic delayed, LocalSystem, restart on fail) and starts it. Data/CA live under `%PROGRAMDATA%\PepeNet\.pepenet`.
 4. Plants OS wiring: current-user Root CA, HKCU PAC, NRPT `.<tld>` → `127.0.0.1`.
 
 No GUI, no tray, no logon required. Git-for-Windows `curl | bash` of `get.sh` will refuse and print the PowerShell line.
 
-Until a GitHub release ships `pepenet-web.exe`, build it from the desktop `linux` branch on MSYS2:
+Until a GitHub release ships `pepenet-web.exe`, build it from pepenet-desktop on MSYS2:
 
 ```
 cmake --build build-win --target pepenet-web
@@ -77,7 +77,7 @@ irm …/install.ps1 | iex
 |---|---|---|
 | `--tld pepe\|doge` / `PEPENET_TLD` | `pepe` | one TLD per box |
 | `--peer host:port` / `PEPENET_PEER` | pep: `pepenet.shibpost.com:33874,net.pepecoin.services:33874`; doge: `pepenet.shibpost.com:22556` | PepeNet seeds `dnsd` dials (comma-separated) |
-| `--ref` / `PEPENET_REF` | `linux` | git branch/tag to clone |
+| `--ref` / `PEPENET_REF` | `main` | git branch/tag to clone |
 | `--home` / `PEPENET_HOME` | `~/.pepenet` | data, bins, source |
 | `PEPENET_ORG` | `PepeNetWeb` | GitHub org |
 
@@ -88,7 +88,7 @@ irm …/install.ps1 | iex
 **macOS / Linux** — stops daemons, removes OS wiring, leaves `~/.pepenet` (chain db, zones, source):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash -s -- uninstall
 ```
 
 Wipe data: `rm -rf ~/.pepenet`.
@@ -96,13 +96,13 @@ Wipe data: `rm -rf ~/.pepenet`.
 **Windows** — PowerShell:
 
 ```powershell
-$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex
 ```
 
 Command Prompt:
 
 ```bat
-set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
 ```
 
 Stops and deletes the `PepeNetWeb` service, removes NRPT + PAC. Leaves `%PROGRAMDATA%\PepeNet` data.
@@ -270,4 +270,4 @@ dnsd --db ~/.pepenet/pep.db --store ~/.pepenet/dns-pep.db \
 
 [pepenet-desktop](https://github.com/PepeNetWeb/pepenet-desktop) embeds the same dns/tls stack in-process. That is the right one-command shape when you want a wallet, not just a padlock daemon.
 
-Build and packaging: [pepenet-desktop/INSTALL.md](https://github.com/PepeNetWeb/pepenet-desktop/blob/linux/INSTALL.md).
+Build and packaging: [pepenet-desktop/INSTALL.md](https://github.com/PepeNetWeb/pepenet-desktop/blob/main/INSTALL.md).

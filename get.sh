@@ -2,7 +2,7 @@
 #
 # pepenet-tls installer — one command, macOS and Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash
 #   curl -fsSL .../get.sh | bash -s -- --tld pepe
 #   curl -fsSL .../get.sh | bash -s -- uninstall
 #
@@ -11,7 +11,7 @@
 # logout), then elevates to plant the CA / split-DNS / :443 redirect.
 # install.sh by itself only does the OS half.
 #
-# Env: PEPENET_HOME (default ~/.pepenet), PEPENET_REF (default linux),
+# Env: PEPENET_HOME (default ~/.pepenet), PEPENET_REF (default main),
 #      PEPENET_TLD (default pepe), PEPENET_PEER (comma-separated host:port;
 #      pep default pepenet.shibpost.com:33874,net.pepecoin.services:33874)
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ORG="${PEPENET_ORG:-PepeNetWeb}"
-REF="${PEPENET_REF:-linux}"
+REF="${PEPENET_REF:-main}"
 HOME_DIR="${PEPENET_HOME:-$HOME/.pepenet}"
 TLD="${PEPENET_TLD:-pepe}"
 PEER="${PEPENET_PEER:-}"
@@ -287,8 +287,8 @@ do_setup() {
     clone_or_update "$GH/pepenet-dns.git"        "$SRC/pepenet-dns"
     clone_or_update "$GH/pepenet-tls.git"        "$SRC/pepenet-tls"
 
-    # glibc + -std=c11 hides mkdtemp/fdopen; the linux branches already pin
-    # _DEFAULT_SOURCE, but dns/indexer on main may not. Harmless elsewhere.
+    # glibc + -std=c11 hides mkdtemp/fdopen; mesh pins _DEFAULT_SOURCE.
+    # Harmless elsewhere.
     local posix="-std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra"
     log "building mesh (libsecp + libpepenetnet.a)"
     make -C "$SRC/pepenet-mesh" CFLAGS="$posix -Wshadow" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"

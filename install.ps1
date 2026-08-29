@@ -4,15 +4,15 @@
 # LocalSystem, auto-restart), plants the name-constrained CA + NRPT + PAC.
 # That is the systemd/LaunchDaemon analogue — not the GUI.
 #
-#   irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex
 #   $env:PEPENET_UNINSTALL='1'; irm …/install.ps1 | iex
 #
 # Command Prompt (cmd.exe) — irm/iex are PowerShell:
-#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
-#   set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
+#   set PEPENET_UNINSTALL=1 && powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
 #
-# pepenet-web.exe must be in the latest desktop MSI (linux-branch packaging)
-# or set PEPENET_WEB_EXE to a built copy.
+# pepenet-web.exe must be in the latest desktop MSI (0.2.0 GUI-only is not
+# enough) or set PEPENET_WEB_EXE to a built copy.
 
 $ErrorActionPreference = "Stop"
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
@@ -36,7 +36,7 @@ function Test-Admin {
 function Assert-Admin {
     if (Test-Admin) { return }
     Write-Step "relaunching elevated (service + NRPT need admin)"
-    $cmd = "irm https://raw.githubusercontent.com/$Owner/pepenet-tls/linux/install.ps1 | iex"
+    $cmd = "irm https://raw.githubusercontent.com/$Owner/pepenet-tls/main/install.ps1 | iex"
     if ($env:PEPENET_UNINSTALL -eq "1") { $cmd = "`$env:PEPENET_UNINSTALL='1'; $cmd" }
     if ($env:PEPENET_WEB_EXE) { $cmd = "`$env:PEPENET_WEB_EXE='$($env:PEPENET_WEB_EXE)'; $cmd" }
     Start-Process powershell.exe -Verb RunAs -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $cmd)
@@ -50,7 +50,7 @@ function Get-Helper {
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
     if ($local) { return $local }
     $out = Join-Path $env:TEMP "pepenet-install-helper.ps1"
-    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/$Owner/pepenet-desktop/linux/packaging/install-helper.ps1" -OutFile $out
+    Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/$Owner/pepenet-desktop/main/packaging/install-helper.ps1" -OutFile $out
     return $out
 }
 
@@ -166,7 +166,7 @@ function Install-Pepenet {
     Write-Host "PepeNet web is a boot service ($SvcName)."
     Write-Host "  $exe"
     Write-Host "  data $DataDir"
-    Write-Host "Uninstall: `$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/linux/install.ps1 | iex"
+    Write-Host "Uninstall: `$env:PEPENET_UNINSTALL='1'; irm https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/install.ps1 | iex"
 }
 
 if ($env:PEPENET_UNINSTALL -eq "1") { Uninstall-Pepenet } else { Install-Pepenet }
