@@ -179,7 +179,7 @@ Elevation: already-root, else **pkexec if present, else sudo** (passwordless-sud
 
 1. `install-ca` → `~/.pki/nssdb` via `certutil` if `libnss3-tools` is installed (missing certutil is a no-op).
 2. System store: `/usr/local/share/ca-certificates/pepenet-<tld>.crt` + `update-ca-certificates` (Debian/Ubuntu) or `update-ca-trust` (Fedora). Chromium/Firefox-with-enterprise-roots read this via p11-kit.
-3. systemd-resolved **split-DNS** on `lo`: `~<tld>` → `127.0.0.1:15353`. Never a global `DNS=` — that would send every name to dnsd.
+3. systemd-resolved **split-DNS** on dummy `pn-<tld>` (not `lo`): `~<tld>` → `127.0.0.1:15353`. Never a global `DNS=` — that would send every name to dnsd. `lo` fails on NetworkManager desktops (`network1.service not found`).
 4. Optional nftables table `pepenet-<tld>`: output-hook redirect `127.0.0.1:443 → :8443`. Best-effort; PAC still works if nft is missing.
 5. Firefox `~/.mozilla/firefox/*/user.js` enterprise-roots pref.
 
@@ -216,6 +216,7 @@ curl -vI https://pepenet.pepe/
 scutil --dns | grep -A2 pepe
 
 # Linux split-DNS
+resolvectl status pn-pepe
 resolvectl query pepenet.pepe
 nft list table ip pepenet-pepe          # :443 rdr, if nft worked
 ```
