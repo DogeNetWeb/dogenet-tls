@@ -32,6 +32,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <errno.h>
+#include <time.h>
+#include <stdint.h>
 
 static int pass = 0, fail = 0;
 static void ok(const char *m)  { pass++; printf("  ok   %s\n", m); }
@@ -135,6 +137,7 @@ static int resolve(const char *sni, OriginInfo *out, void *ud) {
     out->assoc_len = 32;
     if (!strcmp(sni, "www.pepenet.doge")) { memcpy(out->assoc, rt->good, 32); return 1; }
     if (!strcmp(sni, "bad.pepenet.doge"))  { memcpy(out->assoc, rt->bad,  32); return 1; }
+    if (!strcmp(sni, "down.pepenet.doge")) { memcpy(out->assoc, rt->good, 32); out->port = 1; return 1; }
     return 0;   /* unknown name → not served */
 }
 
@@ -218,6 +221,27 @@ static void *ctl_tramp(void *a) {
     struct ctl_args *c = a;
     proxy_serve_ctl(c->lfd, c->root, c->rk, resolve, c->rt, c->ev, &g_stopf);
     return NULL;
+}
+
+/* Fail-closed pages report fold vs peer tip through ev.sync. The daemon
+ * (cmd_serve) and the desktop/pepenet-web embed both wire this; the page
+ * HTML lives in proxy.c so get.sh and the GUI show the same strip. */
+static int64_t g_sync_h, g_sync_ph;
+static void ev_sync(void *u, int64_t *h, int64_t *ph) {
+    (void)u;
+    if (h)  *h  = g_sync_h;
+    if (ph) *ph = g_sync_ph;
+}
+
+static void dump_page(const char *path, const char *body) {
+    const char *html = strstr(body, "<!doctype");
+    if (!html) html = strstr(body, "<!DOCTYPE");
+    if (!html) return;
+    FILE *f = fopen(path, "w");
+    if (!f) { perror(path); return; }
+    fputs(html, f);
+    fclose(f);
+    printf("  dumped %s\n", path);
 }
 
 int main(void) {
@@ -308,7 +332,7 @@ int main(void) {
         int cfd2 = proxy_listen("127.0.0.1", 0);
         getsockname(cfd2, (struct sockaddr *)&sa, &sl);
         int cport = ntohs(sa.sin_port);
-        ProxyEvents ev = { ev_mint, ev_verd, NULL };
+        ProxyEvents ev = { .minted = ev_mint, .verdict = ev_verd };
         struct ctl_args ca2 = { cfd2, root, rootkey, &rt, &ev };
         pthread_t cth; pthread_create(&cth, NULL, ctl_tramp, &ca2);
 
@@ -331,6 +355,75 @@ int main(void) {
         if (ms < 1500) ok("ctl: stop flag ends the accept loop (join < 1.5 s)");
         else { bad("ctl: stop flag did not end the loop promptly"); printf("       join=%.0fms\n", ms); }
         close(cfd2);
+    }
+
+    /* 4b. SYNC STRIP — fail-closed HTML in proxy.c, fed by ev.sync. The page
+     * is the same for pepenet-tls serve, get.sh, pepenet-web, and desktop. */
+    printf("── fail-closed page: chain sync strip ──\n");
+    {
+        int sfd = proxy_listen("127.0.0.1", 0);
+        getsockname(sfd, (struct sockaddr *)&sa, &sl);
+        int sport = ntohs(sa.sin_port);
+        ProxyEvents ev = { .sync = ev_sync };
+        g_stopf = 0;
+        struct ctl_args ca = { sfd, root, rootkey, &rt, &ev };
+        pthread_t th; pthread_create(&th, NULL, ctl_tramp, &ca);
+
+        g_sync_h = 0; g_sync_ph = 0;
+        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, "HTTP/1.0 404") && strstr(body, "NOT SYNCED")
+            && strstr(body, "this node has not downloaded the chain yet"))
+            ok("404 at height 0: NOT SYNCED");
+        else { bad("404 at height 0 should say NOT SYNCED");
+               printf("       body=%.120s\n", body); }
+
+        g_sync_h = 1234567; g_sync_ph = 2000000;
+        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, "CATCHING UP") && strstr(body, "1,234,567")
+            && strstr(body, "2,000,000")
+            && strstr(body, "will not resolve here until catch-up finishes"))
+            ok("404 while behind: CATCHING UP + heights + copy");
+        else { bad("404 while behind should say CATCHING UP with both heights");
+               printf("       body=%.160s\n", strstr(body, "CATCHING UP") ? strstr(body, "CATCHING UP") : body); }
+        const char *dump = getenv("PEPENET_DUMP_ERROR_PAGES");
+        if (dump && *dump) dump_page("design/error-pages/404-no-such-name.html", body);
+
+        g_sync_h = 2000000; g_sync_ph = 2000000;
+        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, "AT TIP") && strstr(body, "block <b>2,000,000</b>")
+            && !strstr(body, "will not resolve here until catch-up finishes"))
+            ok("404 at tip: AT TIP, no catch-up copy");
+        else { bad("404 at tip should say AT TIP without the behind note");
+               printf("       body=%.160s\n", strstr(body, "AT TIP") ? strstr(body, "AT TIP") : body); }
+
+        g_sync_h = 1234567; g_sync_ph = 0;
+        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, ">CHAIN<") && strstr(body, "1,234,567") && !strstr(body, "CATCHING UP"))
+            ok("404 with unknown peer tip: CHAIN");
+        else { bad("404 with unknown peer should say CHAIN");
+               printf("       body=%.160s\n", strstr(body, "CHAIN") ? strstr(body, "CHAIN") : body); }
+
+        g_sync_h = 1234567; g_sync_ph = 2000000;
+        (void)browser_get("127.0.0.1", sport, "bad.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, "HTTP/1.0 502") && strstr(body, "CATCHING UP")
+            && !strstr(body, "will not resolve here until catch-up finishes"))
+            ok("502 while behind: CATCHING UP, no 404-only copy");
+        else { bad("502 while behind should show the strip without 404 copy");
+               printf("       body=%.160s\n", strstr(body, "CATCHING UP") ? strstr(body, "CATCHING UP") : body); }
+        if (dump && *dump) dump_page("design/error-pages/502-key-mismatch.html", body);
+
+        g_sync_h = 1234567; g_sync_ph = 2000000;
+        (void)browser_get("127.0.0.1", sport, "down.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        if (strstr(body, "HTTP/1.0 504") && strstr(body, "CATCHING UP")
+            && !strstr(body, ORIGIN_BODY))
+            ok("504 while behind: CATCHING UP, origin bytes withheld");
+        else { bad("504 while behind should fail closed with the strip");
+               printf("       body=%.160s\n", body); }
+        if (dump && *dump) dump_page("design/error-pages/504-origin-unreachable.html", body);
+
+        g_stopf = 1;
+        pthread_join(th, NULL);
+        close(sfd);
     }
 
     /* 5. ABORT STORM — connections that reset while queued must not kill the

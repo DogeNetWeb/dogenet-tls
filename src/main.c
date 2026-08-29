@@ -23,6 +23,8 @@
 #include "resolve.h"
 #include "sscert.h"
 
+#include <stdint.h>
+
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
@@ -99,6 +101,10 @@ static int cmd_origin_cert(const char *name, const char *dir) {
     return 0;
 }
 
+static void ev_sync(void *u, int64_t *h, int64_t *ph) {
+    resolver_sync(u, h, ph);
+}
+
 /* serve — the DANE proxy: listen on loopback:port, resolve each SNI against the
  * pepenet store, DANE-verify the origin, splice on success (slice 4). */
 static int cmd_serve(int argc, char **argv) {
@@ -125,8 +131,16 @@ static int cmd_serve(int argc, char **argv) {
 
     fprintf(stderr, "pepenet-tls: serving .%s on %s:%d (store=%s indexer=%s)\n",
             ca_tld(), listen, port, store, db);
-    int rc = proxy_run(listen, port, root, rk, resolver_resolve, rv);
-    if (rc) fprintf(stderr, "serve: cannot bind %s:%d\n", listen, port);
+    int lfd = proxy_listen(listen, port);
+    if (lfd < 0) {
+        fprintf(stderr, "serve: cannot bind %s:%d\n", listen, port);
+        resolver_close(rv);
+        X509_free(root); EVP_PKEY_free(rk);
+        return 1;
+    }
+    ProxyEvents ev = { .u = rv, .sync = ev_sync };
+    int rc = proxy_serve_ctl(lfd, root, rk, resolver_resolve, rv, &ev, NULL);
+    if (rc) fprintf(stderr, "serve: proxy loop failed\n");
 
     resolver_close(rv);
     X509_free(root); EVP_PKEY_free(rk);

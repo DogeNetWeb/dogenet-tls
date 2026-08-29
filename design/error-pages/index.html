@@ -25,7 +25,9 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 <h1>pepenet-tls — fail-closed pages</h1>
 <p class=sub>Every page the DANE proxy can serve in place of a site. Captured from
 the real proxy over TLS, not mocked up. Open any of them directly; they are
-self-contained (no external CSS, fonts or images).</p>
+self-contained (no external CSS, fonts or images). Each page carries a chain-sync
+strip (NOT SYNCED / CATCHING UP / AT TIP) so a name that is not in this node's
+fold yet is not mistaken for a name that does not exist.</p>
 
 <a class=row href="502-key-mismatch.html">
   <span class=c>ERROR 502</span>
@@ -46,15 +48,15 @@ self-contained (no external CSS, fonts or images).</p>
   <span class=c>ERROR 404</span>
   <div class=t>No such name on the chain</div>
   <div class=d>Nothing published for this name: never registered, lease lapsed, or
-  no records added yet. No origin was dialled.</div>
+  no records added yet — or this node is still catching up and the name sits
+  above its fold. No origin was dialled.</div>
 </a>
 
 <p class=note>
 Regenerate after editing <code>serve_error()</code> in <code>src/proxy.c</code>:
-these were produced by driving the real <code>proxy_serve()</code> against a local
-origin whose certificate deliberately mismatches its TLSA. Toggle your OS between
+<code>PEPENET_DUMP_ERROR_PAGES=1 make test</code> (the proxy_test sync-strip
+case writes 404 and 502 here from the live HTML). Toggle your OS between
 light and dark appearance to check both themes — the pages follow
-<code>prefers-color-scheme</code>. Known gap: the logo is a placeholder badge; the
-globe from <code>design/pepenetlogo.png</code> is not yet reproduced in the inline SVG.
+<code>prefers-color-scheme</code>.
 </p>
 </main>

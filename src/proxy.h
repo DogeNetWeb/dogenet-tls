@@ -36,8 +36,9 @@ typedef int (*proxy_resolver)(const char *sni, OriginInfo *out, void *ud);
 int proxy_listen(const char *ip, int port);
 
 /* Observation + control for an embedding host (a GUI wants a mint log and a
- * status line; the CLI wants neither). Callbacks fire on the per-connection
- * threads — keep them cheap and thread-safe. Either pointer may be NULL. */
+ * status line; the CLI wants the chain-sync strip on fail-closed pages).
+ * Callbacks fire on the per-connection threads — keep them cheap and
+ * thread-safe. Any pointer may be NULL. */
 typedef struct {
     void (*minted)(void *u, const char *sni);              /* leaf minted (sni_cb) */
     void (*verdict)(void *u, const char *sni, int dane_ok,
@@ -45,6 +46,10 @@ typedef struct {
                                                               origin_host "" when
                                                               the name is unknown */
     void *u;
+    void (*sync)(void *u, int64_t *height, int64_t *peer_height); /* optional:
+                                                              this node's fold
+                                                              height + last peer
+                                                              tip (0 = unknown) */
 } ProxyEvents;
 
 /* Serve the accept loop on `lfd` (blocks; one detached thread per connection).

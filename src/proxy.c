@@ -120,7 +120,23 @@ typedef struct {
     const uint8_t *assoc;
     size_t         assoc_len;
     const char    *detail;          /* dane_connect's diagnostic string */
+    int64_t        height;          /* this node's fold height (0 = none) */
+    int64_t        peer_height;     /* last peer tip (0 = unknown) */
 } ErrDiag;
+
+static void fmt_h(char *dst, size_t cap, int64_t n) {
+    char tmp[32];
+    int len = snprintf(tmp, sizeof tmp, "%lld", (long long)(n < 0 ? 0 : n));
+    if (len <= 0 || cap < 2) { if (cap) dst[0] = 0; return; }
+    int commas = (len - 1) / 3;
+    if ((size_t)len + (size_t)commas >= cap) { snprintf(dst, cap, "%s", tmp); return; }
+    int o = len + commas;
+    dst[o] = 0;
+    for (int t = len, g = 0; t--; ) {
+        dst[--o] = tmp[t];
+        if (t && ++g == 3) { dst[--o] = ','; g = 0; }
+    }
+}
 
 /* The PepeNet mark: the Pepecoin "P with a stroke", tilted and edged in the
  * badge green, over a white globe. Inline SVG rather than
@@ -218,6 +234,17 @@ static void serve_error(SSL *b, int code, const char *title,
       "padding:2px 10px;margin-bottom:10px}"
       "h1{margin:0 0 12px;font-size:22px;line-height:1.25;letter-spacing:-.02em}"
       "p{margin:0 0 14px;color:var(--mut)}"
+      ".sync{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;"
+      "padding:10px 12px;border:1px solid var(--line);border-radius:10px;"
+      "background:var(--code);font-size:13px}"
+      ".sync.behind{border-color:var(--err)}"
+      ".sync .pill{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;"
+      "border:1px solid var(--accent);color:var(--accent);border-radius:999px;"
+      "padding:2px 9px;flex:none}"
+      ".sync.behind .pill{color:var(--err);border-color:var(--err)}"
+      ".sync .nums{color:var(--mut)}"
+      ".sync b{color:var(--fg);font-weight:600}"
+      ".syncnote{margin:0 0 14px;font-size:13.5px}"
       /* sits between the code pill and the headline, so it stays tight to the
          pill and carries no rule of its own — the details block below supplies
          the only horizontal divider in this region */
@@ -255,6 +282,39 @@ static void serve_error(SSL *b, int code, const char *title,
       "<h1>%s</h1>",
       code, e_title, code, e_sni, e_title);
 
+    /* Chain sync — visible, not buried in Diagnostics. A name 404 while this
+     * node is still catching up is usually "not in our fold yet", not "does
+     * not exist". */
+    {
+        char ours[40], net[40];
+        fmt_h(ours, sizeof ours, d->height);
+        fmt_h(net, sizeof net, d->peer_height);
+        int behind = (d->height == 0) ||
+                     (d->peer_height > 0 && d->height < d->peer_height);
+        if (d->height == 0)
+            o += snprintf(body + o, cap - (size_t)o,
+              "<div class='sync behind'><span class=pill>NOT SYNCED</span>"
+              "<span class=nums>this node has not downloaded the chain yet</span></div>");
+        else if (d->peer_height > 0 && d->height < d->peer_height)
+            o += snprintf(body + o, cap - (size_t)o,
+              "<div class='sync behind'><span class=pill>CATCHING UP</span>"
+              "<span class=nums>this node <b>%s</b> · network <b>%s</b></span></div>",
+              ours, net);
+        else if (d->peer_height > 0)
+            o += snprintf(body + o, cap - (size_t)o,
+              "<div class='sync'><span class=pill>AT TIP</span>"
+              "<span class=nums>block <b>%s</b></span></div>", ours);
+        else
+            o += snprintf(body + o, cap - (size_t)o,
+              "<div class='sync'><span class=pill>CHAIN</span>"
+              "<span class=nums>this node <b>%s</b></span></div>", ours);
+        if (behind && code == 404)
+            o += snprintf(body + o, cap - (size_t)o,
+              "<p class=syncnote>Names registered after this node&#39;s current height "
+              "will not resolve here until catch-up finishes. If the name is older "
+              "than that, it is not published.</p>");
+    }
+
     /* The expandable diagnostics — what we resolved, what we expected, and what
      * the origin actually did. The prose explanation leads the panel: collapsed,
      * the page is just code + title + name, and everything discretionary is one
@@ -279,6 +339,17 @@ static void serve_error(SSL *b, int code, const char *title,
     else
         o += snprintf(body + o, cap - (size_t)o,
           "<dt>published TLSA (pinned key)</dt><dd>none published</dd>");
+
+    {
+        char ours[40], net[40];
+        fmt_h(ours, sizeof ours, d->height);
+        fmt_h(net, sizeof net, d->peer_height);
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>this node</dt><dd>block %s</dd>", ours[0] ? ours : "—");
+        o += snprintf(body + o, cap - (size_t)o,
+          "<dt>network tip</dt><dd>%s</dd>",
+          d->peer_height > 0 ? net : "unknown");
+    }
 
     o += snprintf(body + o, cap - (size_t)o,
       "<dt>DANE verdict</dt><dd>%s</dd></dl>"
@@ -440,12 +511,15 @@ static void handle(Proxy *px, int cfd) {
          * truncated, which silently destroyed the pinned-vs-presented
          * comparison the page exists to show. */
         char err[288];
+        int64_t h = 0, ph = 0;
+        if (px->ev && px->ev->sync) px->ev->sync(px->ev->u, &h, &ph);
         if (!sni || !px->resolve(sni, &oi, px->ud)) {
             if (px->ev && px->ev->verdict && sni)
                 px->ev->verdict(px->ev->u, sni, 0, "");
             ErrDiag d = { sni, NULL, 0, 0, 0, 0, 0, NULL, 0,
                           sni ? "no zone published for this name"
-                              : "the client sent no SNI, so no name could be resolved" };
+                              : "the client sent no SNI, so no name could be resolved",
+                          h, ph };
             serve_error(b, 404, "No such name on the chain",
                 "Nothing is published for this name. Either it was never registered, "
                 "its lease has lapsed, or its owner has not added any DNS records yet.",
@@ -467,7 +541,7 @@ static void handle(Proxy *px, int cfd) {
                  * different things to act on. */
                 ErrDiag d = { sni, oi.host, oi.port, 1,
                               oi.usage, oi.selector, oi.mtype,
-                              oi.assoc, oi.assoc_len, err };
+                              oi.assoc, oi.assoc_len, err, h, ph };
                 switch (r) {
                 case DANE_CONNECT_ERR:
                     serve_error(b, 504, "Origin unreachable",

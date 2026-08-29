@@ -24,4 +24,8 @@ void resolver_close(Resolver *r);
  * (fills *out); 0 otherwise (unknown/unclaimed/unauthenticatable). */
 int resolver_resolve(const char *sni, OriginInfo *out, void *ud);
 
+/* this node's fold height and the last peer tip the indexer persisted (0 if
+ * unknown). Safe from a proxy connection thread. */
+void resolver_sync(Resolver *r, int64_t *height, int64_t *peer_height);
+
 #endif

@@ -44,6 +44,15 @@ void resolver_close(Resolver *r) {
     free(r);
 }
 
+void resolver_sync(Resolver *r, int64_t *height, int64_t *peer_height) {
+    if (height)      *height = 0;
+    if (peer_height) *peer_height = 0;
+    if (!r) return;
+    pthread_mutex_lock(&r->mu);
+    dns_chain_sync(r->ch, height, peer_height);
+    pthread_mutex_unlock(&r->mu);
+}
+
 int resolver_resolve(const char *sni, OriginInfo *out, void *ud) {
     Resolver *r = ud;
     if (!r || !sni || !out) return 0;
