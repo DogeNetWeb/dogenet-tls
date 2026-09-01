@@ -138,9 +138,9 @@ static void fmt_h(char *dst, size_t cap, int64_t n) {
     }
 }
 
-/* The DogeNet mark: globe + glyph, tilted and edged in the
- * badge green. Inline SVG rather than a raster — a 1024x1024 source
- * would base64 to roughly a megabyte on every error page; this is ~1.3 KB.
+/* The DogeNet mark: globe + Dogecoin Ð, tilted and edged in the badge gold.
+ * Inline SVG rather than a raster — a 1024x1024 source would base64 to roughly
+ * a megabyte on every error page; this is ~1.3 KB.
  *
  * design/logo.svg is the source of truth; keep the two in step.
  *
@@ -149,40 +149,43 @@ static void fmt_h(char *dst, size_t cap, int64_t n) {
  *     Chrome's HTML parser silently drop the entire enclosing <g> — that is
  *     how the globe vanished the first time. Double quotes would need C
  *     escaping, hence single throughout.
- *   • pnWp/pnGu carry gradientTransform='rotate(-9.8 ...)' to cancel the glyph
+ *   • dnWp/dnGu carry gradientTransform='rotate(-9.8 ...)' to cancel the glyph
  *     group's rotation. Without it both ramps tilt with the letter, and the
- *     green edge stops matching the badge behind it — which is the whole point
+ *     gold edge stops matching the badge behind it — which is the whole point
  *     of the edge.
  *   • paint-order='stroke' draws the edge before the fill, so the fill covers
  *     its inner half and the glyph keeps its weight; a centred stroke would
  *     eat into the letterform instead.
  *
- * Colours sampled from the raster: badge #6cb274/#429856/#368b4c (three stops —
- * the measured midpoint is darker than a linear ramp), white #ffffff→#dcddd9
- * shared by the globe and the P. */
-#define PN_LOGO \
+ * Colours: Dogecoin gold #c2a633 (official) with a three-stop badge
+ * #d4bc4a/#c2a633/#8a7018, white #ffffff→#dcddd9 shared by the globe and the Ð. */
+#define DN_LOGO \
  "<svg class='lg' aria-hidden='true' viewBox='0 0 64 64' width='44' height='44'>" \
- "<defs><linearGradient id='pnG' x1='0' y1='0' x2='0' y2='1'>" \
- "<stop offset='0' stop-color='#6cb274'/><stop offset='.5' stop-color='#429856'/>" \
- "<stop offset='1' stop-color='#368b4c'/></linearGradient>" \
- "<linearGradient id='pnW' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='0' y2='64'>" \
+ "<defs><linearGradient id='dnG' x1='0' y1='0' x2='0' y2='1'>" \
+ "<stop offset='0' stop-color='#d4bc4a'/><stop offset='.5' stop-color='#c2a633'/>" \
+ "<stop offset='1' stop-color='#8a7018'/></linearGradient>" \
+ "<linearGradient id='dnW' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='0' y2='64'>" \
  "<stop offset='0' stop-color='#ffffff'/><stop offset='1' stop-color='#dcddd9'/>" \
  "</linearGradient>" \
- "<linearGradient id='pnWp' href='#pnW' gradientTransform='rotate(-9.8 32 32)'/>" \
- "<linearGradient id='pnGu' href='#pnG' gradientUnits='userSpaceOnUse'" \
+ "<linearGradient id='dnWp' href='#dnW' gradientTransform='rotate(-9.8 32 32)'/>" \
+ "<linearGradient id='dnGu' href='#dnG' gradientUnits='userSpaceOnUse'" \
  " x1='0' y1='0' x2='0' y2='64' gradientTransform='rotate(-9.8 32 32)'/></defs>" \
- "<circle cx='32' cy='32' r='32' fill='url(#pnG)'/>" \
- "<g fill='none' stroke='url(#pnW)' stroke-width='2.15'>" \
+ "<circle cx='32' cy='32' r='32' fill='url(#dnG)'/>" \
+ "<g fill='none' stroke='url(#dnW)' stroke-width='2.15'>" \
  "<circle cx='32' cy='32' r='27.6'/><ellipse cx='32' cy='32' rx='16' ry='27.6'/>" \
  "<path d='M32 4.4v55.2M4.4 32h55.2M11.2 13.8Q32 25.4 52.8 13.8M11.2 50.2Q32 38.6 52.8 50.2'/>" \
- "</g><g transform='rotate(9.8 32 32)'>" \
- "<path d='" PN_P "' fill='url(#pnWp)' stroke='url(#pnGu)' stroke-width='4'" \
- " stroke-linejoin='miter' stroke-miterlimit='12' paint-order='stroke'/></g></svg>"
+ "</g><g transform='rotate(9.8 32 32)' fill='url(#dnWp)' stroke='url(#dnGu)'" \
+ " stroke-width='4' stroke-linejoin='miter' stroke-miterlimit='12' paint-order='stroke'>" \
+ "<path fill-rule='evenodd' d='" DN_D "'/></g></svg>"
 
-/* the glyph outline */
-#define PN_P \
- "M21.1 17.1h19.4c4.8 0 7.4 4.8 7.4 10.9s-2.6 10.9-7.4 10.9H28.1v13.35h-7V30.4" \
- "h-3.6v-4.4h3.6zm7 5.8v3.1h6.3v4.4h-6.3v2.5h7.9c3 0 4.3-2.2 4.3-5s-1.3-5-4.3-5z"
+/* Ð (U+00D0): one evenodd path. Stem detours left; bowl hole is notched
+ * so the bar continues inside. */
+#define DN_D \
+ "M21.1 16.8h14.8c10.8 0 16.1 6.7 16.1 15.7s-5.3 15.7-16.1 15.7H21.1V33H16.2V28.7H21.1z" \
+ "M28.1 23.4h6.9c6.3 0 10.1 3.6 10.1 9.1s-3.8 9.1-10.1 9.1h-6.9V33h4.9V28.7H28.1z"
+
+#define PN_LOGO DN_LOGO
+#define PN_P DN_D
 
 /* Serve a local page over the (trusted) browser session. Used fail-closed: we
  * present a leaf the browser trusts, but the body is OUR diagnostic — never
@@ -212,7 +215,7 @@ static void serve_error(SSL *b, int code, const char *title,
       "<meta name=viewport content='width=device-width,initial-scale=1'>"
       "<title>%d %s</title><style>"
       ":root{--bg:#f7f8f7;--fg:#12160f;--mut:#5c6659;--card:#fff;--line:#e2e6e0;"
-      "--accent:#43a75e;--err:#c0342b;--code:#f0f2ef}"
+      "--accent:#c2a633;--err:#c0342b;--code:#f0f2ef}"
       "@media(prefers-color-scheme:dark){:root{--bg:#0f1210;--fg:#e8ece6;"
       "--mut:#98a394;--card:#171b18;--line:#252b26;--err:#ff7b6b;--code:#1e231f}}"
       "*{box-sizing:border-box}"

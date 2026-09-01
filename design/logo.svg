@@ -1,78 +1,68 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!--
-  DogeNet mark — globe + glyph over a white globe on a green badge.
-  Source of truth for the inline copy in src/proxy.c.
+  DogeNet mark — Dogecoin Ð (U+00D0) over a white globe on a gold
+  badge. Same construction as the PepeNet P-on-globe: vertical ramps, glyph
+  tilted 9.8°, edged in the badge gold so the edge tracks the tile at every
+  height. Square corners of the viewBox are transparent (no white fill).
 
   THIS IS THE SOURCE OF TRUTH for the inline copy compiled into the fail-closed
-  error pages: PN_LOGO / PN_P in src/proxy.c. Keep the two in step. The inline
-  copy differs only where the embedding demands it:
+  error pages: DN_LOGO / DN_D in pepenet-tls (dogenet-tls) src/proxy.c. Keep
+  the two in step. The inline copy differs only where the embedding demands it:
     - no xmlns (not needed for inline SVG in an HTML document)
-    - no <title>; it carries class='lg' aria-hidden='true' instead, because on
-      the error page the mark is decorative and the wordmark beside it is the
-      accessible name
+    - no <title>; it carries class='lg' aria-hidden='true' instead
     - width/height 44
   Every attribute value is SINGLE-quoted, deliberately: the inline copy lives in
-  a C string literal (so double quotes would need escaping), and unquoted values
-  make the HTML parser silently drop the enclosing <g> — which is how the globe
-  disappeared the first time.
+  a C string literal.
 
-  Colours are sampled from the raster, not eyeballed:
-    - badge  #6cb274 -> #429856 -> #368b4c, three stops because the measured
-      midpoint is noticeably darker than a linear ramp between the ends
-    - white  #ffffff -> #dcddd9, shared by the globe AND the P (the rim measures
-      255 at top / 223 at bottom, the P 251 / 223 — the same ramp). Sampling
-      across x showed no trend, so it is a true vertical.
-
-  The P is edged in the badge's own green rather than drop-shadowed, so it reads
-  against the globe without a shadow muddying the glyph at small sizes.
+  Colours from the Dogecoin brand (dogecoin.com + official gold #C2A633,
+  dark brown #4D3400). Three-stop badge because a linear ramp between the
+  ends reads too flat; midpoint sits on the official gold.
+    - badge  #d4bc4a -> #c2a633 -> #8a7018
+    - white  #ffffff -> #dcddd9, shared by the globe AND the Ð
 -->
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'
-     width='512' height='512' role='img' aria-label='DogeNet'>
+     width='512' height='512' role='img' aria-label='DogeNet'
+     style='background:transparent'>
   <title>DogeNet</title>
 
   <defs>
-    <!-- the badge; objectBoundingBox on a circle that spans the whole viewBox -->
-    <linearGradient id='pnG' x1='0' y1='0' x2='0' y2='1'>
-      <stop offset='0' stop-color='#6cb274'/>
-      <stop offset='.5' stop-color='#429856'/>
-      <stop offset='1' stop-color='#368b4c'/>
+    <linearGradient id='dnG' x1='0' y1='0' x2='0' y2='1'>
+      <stop offset='0' stop-color='#d4bc4a'/>
+      <stop offset='.5' stop-color='#c2a633'/>
+      <stop offset='1' stop-color='#8a7018'/>
     </linearGradient>
 
-    <!-- the white ramp, in user space so ONE gradient spans the whole badge
-         rather than restarting per element -->
-    <linearGradient id='pnW' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='0' y2='64'>
+    <linearGradient id='dnW' gradientUnits='userSpaceOnUse' x1='0' y1='0' x2='0' y2='64'>
       <stop offset='0' stop-color='#ffffff'/>
       <stop offset='1' stop-color='#dcddd9'/>
     </linearGradient>
 
-    <!-- The two ramps the P uses. Both inherit their stops via href and add
-         gradientTransform='rotate(-9.8 ...)' to cancel the glyph group's
-         rotation: without it the ramps would tilt with the letter instead of
-         staying vertical, and the green edge would stop matching the badge
-         behind it — which is the entire point of the edge. -->
-    <linearGradient id='pnWp' href='#pnW' gradientTransform='rotate(-9.8 32 32)'/>
-    <linearGradient id='pnGu' href='#pnG' gradientUnits='userSpaceOnUse'
+    <!-- cancel the glyph group's 9.8° tilt so ramps stay vertical and the
+         gold edge keeps matching the badge behind it -->
+    <linearGradient id='dnWp' href='#dnW' gradientTransform='rotate(-9.8 32 32)'/>
+    <linearGradient id='dnGu' href='#dnG' gradientUnits='userSpaceOnUse'
                     x1='0' y1='0' x2='0' y2='64'
                     gradientTransform='rotate(-9.8 32 32)'/>
   </defs>
 
-  <!-- the badge -->
-  <circle cx='32' cy='32' r='32' fill='url(#pnG)'/>
+  <circle cx='32' cy='32' r='32' fill='url(#dnG)'/>
 
   <!-- the globe: rim, one meridian ellipse, the axes, and two curved parallels -->
-  <g fill='none' stroke='url(#pnW)' stroke-width='2.15'>
+  <g fill='none' stroke='url(#dnW)' stroke-width='2.15'>
     <circle cx='32' cy='32' r='27.6'/>
     <ellipse cx='32' cy='32' rx='16' ry='27.6'/>
     <path d='M32 4.4v55.2M4.4 32h55.2M11.2 13.8Q32 25.4 52.8 13.8M11.2 50.2Q32 38.6 52.8 50.2'/>
   </g>
 
-  <!-- The P, tilted, edged in the badge green. paint-order='stroke' draws the
-       edge first so the fill covers its inner half and the glyph keeps its
-       weight; miter + a raised miterlimit keep every corner sharp (the default
-       limit of 4 quietly bevels the tightest angles into chamfers). -->
-  <g transform='rotate(9.8 32 32)'>
-    <path d='M21.1 17.1h19.4c4.8 0 7.4 4.8 7.4 10.9s-2.6 10.9-7.4 10.9H28.1v13.35h-7V30.4h-3.6v-4.4h3.6zm7 5.8v3.1h6.3v4.4h-6.3v2.5h7.9c3 0 4.3-2.2 4.3-5s-1.3-5-4.3-5z'
-          fill='url(#pnWp)' stroke='url(#pnGu)' stroke-width='4'
-          stroke-linejoin='miter' stroke-miterlimit='12' paint-order='stroke'/>
+  <!-- Ð (U+00D0): one evenodd path. Outer stem detours left for the bar;
+       the bowl hole is notched so the bar continues inside. paint-order
+       stroke keeps the gold edge outside the glyph; miterlimit 12 keeps
+       corners sharp. After the 9.8° tilt the bar reads as the Dogecoin slash. -->
+  <g transform='rotate(9.8 32 32)' fill='url(#dnWp)' stroke='url(#dnGu)'
+     stroke-width='4' stroke-linejoin='miter' stroke-miterlimit='12'
+     paint-order='stroke'>
+    <path fill-rule='evenodd'
+          d='M21.1 16.8h14.8c10.8 0 16.1 6.7 16.1 15.7s-5.3 15.7-16.1 15.7H21.1V33H16.2V28.7H21.1z
+             M28.1 23.4h6.9c6.3 0 10.1 3.6 10.1 9.1s-3.8 9.1-10.1 9.1h-6.9V33h4.9V28.7H28.1z'/>
   </g>
 </svg>
