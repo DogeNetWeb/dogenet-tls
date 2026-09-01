@@ -25,7 +25,7 @@
  *   - names that do not exist, empty zones, wrong TLD, malformed and oversize
  *     names all return 0;
  *   - case-insensitivity of the SNI (DNS names are case-insensitive);
- *   - the PEPENET_ORIGIN_PORT test override, including that junk values are
+ *   - the DOGENET_ORIGIN_PORT test override, including that junk values are
  *     ignored rather than applied.
  */
 #include "resolve.h"
@@ -34,7 +34,7 @@
 #include "dns_state.h"
 #include "dns_chain.h"
 #include "zone.h"
-#include "pepenet/crypto.h"
+#include "dogenet/crypto.h"
 
 #include <sqlite3.h>
 
@@ -92,8 +92,8 @@ static int build_indexer(const uint8_t owner[20], int64_t lease_expiry) {
         }
         if (st) sqlite3_finalize(st);
     }
-    if (ok) {                                   /* `pepenet` is owned; `empty` too */
-        const char *names[] = { "pepenet", "empty" };
+    if (ok) {                                   /* `dogenet` is owned; `empty` too */
+        const char *names[] = { "dogenet", "empty" };
         sqlite3_stmt *st = NULL;
         sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO names(name,owner,lease_expiry) VALUES(?1,?2,?3)", -1, &st, NULL);
         for (size_t i = 0; i < sizeof names / sizeof names[0] && st; i++) {
@@ -146,7 +146,7 @@ static void hexstr(const uint8_t *p, int n, char *out) {
 int main(void) {
     setbuf(stdout, NULL);
 
-    char tmpl[] = "/tmp/pepenet-resolvetest.XXXXXX";
+    char tmpl[] = "/tmp/dogenet-resolvetest.XXXXXX";
     char *dir = mkdtemp(tmpl);
     if (!dir) { perror("mkdtemp"); return 1; }
     snprintf(g_dir, sizeof g_dir, "%s", dir);
@@ -176,19 +176,19 @@ int main(void) {
 
         char tlsa[200];
         int ok = 1;
-        ok &= publish(st, &orc, priv, pub, "pepenet", "@", "A", "192.0.2.9");
+        ok &= publish(st, &orc, priv, pub, "dogenet", "@", "A", "192.0.2.9");
         snprintf(tlsa, sizeof tlsa, "3 1 1 %s", apex_hex);
-        ok &= publish(st, &orc, priv, pub, "pepenet", "_443._tcp", "TLSA", tlsa);
+        ok &= publish(st, &orc, priv, pub, "dogenet", "_443._tcp", "TLSA", tlsa);
 
-        ok &= publish(st, &orc, priv, pub, "pepenet", "www", "A", "192.0.2.10");
+        ok &= publish(st, &orc, priv, pub, "dogenet", "www", "A", "192.0.2.10");
         snprintf(tlsa, sizeof tlsa, "3 1 1 %s", www_hex);
-        ok &= publish(st, &orc, priv, pub, "pepenet", "_443._tcp.www", "TLSA", tlsa);
+        ok &= publish(st, &orc, priv, pub, "dogenet", "_443._tcp.www", "TLSA", tlsa);
 
         /* `naked` has an A but deliberately NO TLSA — the fail-closed case */
-        ok &= publish(st, &orc, priv, pub, "pepenet", "naked", "A", "192.0.2.11");
+        ok &= publish(st, &orc, priv, pub, "dogenet", "naked", "A", "192.0.2.11");
         /* `pinonly` has a TLSA but no A */
         snprintf(tlsa, sizeof tlsa, "3 1 1 %s", apex_hex);
-        ok &= publish(st, &orc, priv, pub, "pepenet", "_443._tcp.pinonly", "TLSA", tlsa);
+        ok &= publish(st, &orc, priv, pub, "dogenet", "_443._tcp.pinonly", "TLSA", tlsa);
 
         sp_state_close(st);
         dns_chain_close(ch);
@@ -215,8 +215,8 @@ int main(void) {
     {
         OriginInfo oi;
         CHECK(resolver_resolve(NULL, &oi, r) == 0, "NULL sni -> 0");
-        CHECK(resolver_resolve("pepenet.pepe", NULL, r) == 0, "NULL out -> 0");
-        CHECK(resolver_resolve("pepenet.pepe", &oi, NULL) == 0, "NULL resolver -> 0");
+        CHECK(resolver_resolve("dogenet.pepe", NULL, r) == 0, "NULL out -> 0");
+        CHECK(resolver_resolve("dogenet.pepe", &oi, NULL) == 0, "NULL resolver -> 0");
     }
 
     /* ── the happy paths ─────────────────────────────────────────────────── */
@@ -224,8 +224,8 @@ int main(void) {
     {
         OriginInfo oi;
         memset(&oi, 0, sizeof oi);
-        int got = resolver_resolve("pepenet.pepe", &oi, r);
-        CHECK(got == 1, "apex 'pepenet.pepe' resolves");
+        int got = resolver_resolve("dogenet.pepe", &oi, r);
+        CHECK(got == 1, "apex 'dogenet.pepe' resolves");
         CHECK(got && !strcmp(oi.host, "192.0.2.9"), "apex host is its A record");
         CHECK(got && oi.port == 443, "apex port is 443");
         CHECK(got && oi.usage == 3 && oi.selector == 1 && oi.mtype == 1,
@@ -234,8 +234,8 @@ int main(void) {
               "apex association is EXACTLY the published pin");
 
         memset(&oi, 0, sizeof oi);
-        got = resolver_resolve("www.pepenet.pepe", &oi, r);
-        CHECK(got == 1, "subdomain 'www.pepenet.pepe' resolves");
+        got = resolver_resolve("www.dogenet.pepe", &oi, r);
+        CHECK(got == 1, "subdomain 'www.dogenet.pepe' resolves");
         CHECK(got && !strcmp(oi.host, "192.0.2.10"), "subdomain host is its own A record");
         CHECK(got && oi.assoc_len == 32 && memcmp(oi.assoc, PIN_WWW, 32) == 0,
               "subdomain gets ITS OWN pin, not the apex's");
@@ -245,9 +245,9 @@ int main(void) {
     printf("-- fail-closed: no pin, no service --\n");
     {
         OriginInfo oi;
-        CHECK(resolver_resolve("naked.pepenet.pepe", &oi, r) == 0,
+        CHECK(resolver_resolve("naked.dogenet.pepe", &oi, r) == 0,
               "A record but NO TLSA -> 0 (never dial an unauthenticatable origin)");
-        CHECK(resolver_resolve("pinonly.pepenet.pepe", &oi, r) == 0,
+        CHECK(resolver_resolve("pinonly.dogenet.pepe", &oi, r) == 0,
               "TLSA but no A record -> 0");
     }
 
@@ -259,17 +259,17 @@ int main(void) {
             { "nosuchname.pepe",        "unowned apex -> 0" },
             { "empty.pepe",             "owned name with an EMPTY zone -> 0" },
             { "www.nosuchname.pepe",    "subdomain of an unowned apex -> 0" },
-            { "pepenet.doge",           "right name, WRONG tld -> 0" },
-            { "pepenet.com",            "ICANN name -> 0" },
+            { "dogenet.doge",           "right name, WRONG tld -> 0" },
+            { "dogenet.com",            "ICANN name -> 0" },
             { "pepe",                   "the bare suffix -> 0" },
             { ".pepe",                  "empty apex '.pepe' -> 0" },
-            { "pepenet.",               "trailing dot only -> 0" },
+            { "dogenet.",               "trailing dot only -> 0" },
             { "",                       "empty string -> 0" },
             { "..pepe",                 "double dot -> 0" },
-            { "pepenet..pepe",          "empty label before the tld -> 0" },
-            { "nope.pepenet.pepe",      "unknown subdomain of an owned apex -> 0" },
+            { "dogenet..pepe",          "empty label before the tld -> 0" },
+            { "nope.dogenet.pepe",      "unknown subdomain of an owned apex -> 0" },
             { "192.0.2.9",              "a bare IP as SNI -> 0" },
-            { "pepenet.pepe.evil.com",  "our name as a PREFIX of an ICANN name -> 0" },
+            { "dogenet.pepe.evil.com",  "our name as a PREFIX of an ICANN name -> 0" },
         };
         for (size_t i = 0; i < sizeof no / sizeof no[0]; i++)
             CHECK(resolver_resolve(no[i].sni, &oi, r) == 0, no[i].what);
@@ -287,24 +287,24 @@ int main(void) {
         memset(big, 'a', 300); strcpy(big + 300, ".pepe");
         CHECK(resolver_resolve(big, &oi, r) == 0, "300-byte apex under .pepe -> 0 (apex cap is 64)");
 
-        memset(big, 'a', 500); strcpy(big + 500, ".pepenet.pepe");
+        memset(big, 'a', 500); strcpy(big + 500, ".dogenet.pepe");
         CHECK(resolver_resolve(big, &oi, r) == 0, "500-byte subdomain -> 0 (sub cap is 128)");
 
         /* deep label nesting under a real apex */
-        strcpy(big, "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.pepenet.pepe");
+        strcpy(big, "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.dogenet.pepe");
         CHECK(resolver_resolve(big, &oi, r) == 0, "deeply nested unknown subdomain -> 0");
 
         /* control characters embedded in the name */
         CHECK(resolver_resolve("pep\renet.pepe", &oi, r) == 0, "CR in the name -> 0");
         CHECK(resolver_resolve("pep\nenet.pepe", &oi, r) == 0, "LF in the name -> 0");
-        CHECK(resolver_resolve("pepenet.pepe\r\n", &oi, r) == 0, "trailing CRLF -> 0");
-        CHECK(resolver_resolve("pepenet\t.pepe", &oi, r) == 0, "tab in the name -> 0");
+        CHECK(resolver_resolve("dogenet.pepe\r\n", &oi, r) == 0, "trailing CRLF -> 0");
+        CHECK(resolver_resolve("dogenet\t.pepe", &oi, r) == 0, "tab in the name -> 0");
         CHECK(resolver_resolve("../../etc/passwd.pepe", &oi, r) == 0, "path traversal shape -> 0");
-        CHECK(resolver_resolve("pepenet.pepe'; DROP TABLE names;--", &oi, r) == 0,
+        CHECK(resolver_resolve("dogenet.pepe'; DROP TABLE names;--", &oi, r) == 0,
               "SQL injection shape -> 0");
         /* the apex is bound as a parameter, so this must be a plain miss, and
          * the table must still be there afterwards */
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1,
               "the store still answers after the injection attempt");
     }
 
@@ -318,7 +318,7 @@ int main(void) {
          * through verbatim, and resolve.c:63 then hands it to
          *   dns_chain.c:59  SELECT owner, lease_expiry FROM names WHERE name=?1
          * which is an exact, case-SENSITIVE SQL comparison against the
-         * lowercase name the indexer stored. "PEPENET" misses, owner_now
+         * lowercase name the indexer stored. "DOGENET" misses, owner_now
          * returns 0, and resolve.c:65 gives up — an existing site serves the
          * fail-closed 404.
          *
@@ -333,58 +333,58 @@ int main(void) {
          * Fail-closed, so not a security hole — an availability bug. Fix is one
          * line: lowercase `apex` before owner_now, mirroring dns_wire.c:47. */
         memset(&oi, 0, sizeof oi);
-        int up = resolver_resolve("PEPENET.PEPE", &oi, r);
+        int up = resolver_resolve("DOGENET.PEPE", &oi, r);
         CHECK(up == 1 && !strcmp(oi.host, "192.0.2.9"),
-              "all-uppercase 'PEPENET.PEPE' resolves like the lowercase form");
+              "all-uppercase 'DOGENET.PEPE' resolves like the lowercase form");
         memset(&oi, 0, sizeof oi);
         CHECK(resolver_resolve("PePeNeT.pEpE", &oi, r) == 1, "mixed-case apex resolves");
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("WWW.pepenet.pepe", &oi, r) == 1, "uppercase subdomain resolves");
+        CHECK(resolver_resolve("WWW.dogenet.pepe", &oi, r) == 1, "uppercase subdomain resolves");
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.PEPE", &oi, r) == 1, "uppercase TLD alone resolves");
+        CHECK(resolver_resolve("dogenet.PEPE", &oi, r) == 1, "uppercase TLD alone resolves");
     }
 
     /* ── the origin-port override ────────────────────────────────────────── */
-    printf("-- PEPENET_ORIGIN_PORT override --\n");
+    printf("-- DOGENET_ORIGIN_PORT override --\n");
     {
         OriginInfo oi;
-        setenv("PEPENET_ORIGIN_PORT", "5001", 1);
+        setenv("DOGENET_ORIGIN_PORT", "5001", 1);
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1 && oi.port == 5001,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1 && oi.port == 5001,
               "a valid override is applied");
-        setenv("PEPENET_ORIGIN_PORT", "0", 1);
+        setenv("DOGENET_ORIGIN_PORT", "0", 1);
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1 && oi.port == 443,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1 && oi.port == 443,
               "override of 0 is ignored (stays 443)");
-        setenv("PEPENET_ORIGIN_PORT", "70000", 1);
+        setenv("DOGENET_ORIGIN_PORT", "70000", 1);
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1 && oi.port == 443,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1 && oi.port == 443,
               "out-of-range override is ignored");
-        setenv("PEPENET_ORIGIN_PORT", "notanumber", 1);
+        setenv("DOGENET_ORIGIN_PORT", "notanumber", 1);
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1 && oi.port == 443,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1 && oi.port == 443,
               "non-numeric override is ignored");
-        setenv("PEPENET_ORIGIN_PORT", "", 1);
+        setenv("DOGENET_ORIGIN_PORT", "", 1);
         memset(&oi, 0, sizeof oi);
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1 && oi.port == 443,
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1 && oi.port == 443,
               "empty override is ignored");
-        unsetenv("PEPENET_ORIGIN_PORT");
+        unsetenv("DOGENET_ORIGIN_PORT");
     }
 
     /* ── the ownership lease gate ────────────────────────────────────────── */
     printf("-- the ownership lease gate --\n");
     {
         OriginInfo oi;
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1, "resolves while the lease is live");
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1, "resolves while the lease is live");
         /* Lapse the lease. The records are untouched and still owner-signed;
          * only the chain's answer changes. resolve.c must stop serving. */
-        CHECK(set_lease("pepenet", (int64_t)time(NULL) - 1), "lease moved into the past");
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 0,
+        CHECK(set_lease("dogenet", (int64_t)time(NULL) - 1), "lease moved into the past");
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 0,
               "a LAPSED lease stops the name resolving (records alone are not enough)");
-        CHECK(resolver_resolve("www.pepenet.pepe", &oi, r) == 0,
+        CHECK(resolver_resolve("www.dogenet.pepe", &oi, r) == 0,
               "subdomains of a lapsed name stop resolving too");
-        CHECK(set_lease("pepenet", (int64_t)time(NULL) + 3600), "lease restored");
-        CHECK(resolver_resolve("pepenet.pepe", &oi, r) == 1, "renewing the lease restores service");
+        CHECK(set_lease("dogenet", (int64_t)time(NULL) + 3600), "lease restored");
+        CHECK(resolver_resolve("dogenet.pepe", &oi, r) == 1, "renewing the lease restores service");
     }
 
     resolver_close(r);

@@ -56,12 +56,12 @@ static int sni_cb(SSL *ssl, int *al, void *arg) {
     return SSL_TLSEXT_ERR_OK;
 }
 
-/* The desktop build passes -DPEPENET_VERSION from CMake (CMakeLists.txt:38 —
- * the one source of truth). A standalone pepenet-tls build has no version of
+/* The desktop build passes -DDOGENET_VERSION from CMake (CMakeLists.txt:38 —
+ * the one source of truth). A standalone dogenet-tls build has no version of
  * its own, so it says "dev" rather than carrying a hardcoded copy that would
  * silently drift the next time the app's version is bumped. */
-#ifndef PEPENET_VERSION
-#define PEPENET_VERSION "dev"
+#ifndef DOGENET_VERSION
+#define DOGENET_VERSION "dev"
 #endif
 
 /* ── the fail-closed diagnostic page ─────────────────────────────────────────
@@ -138,10 +138,9 @@ static void fmt_h(char *dst, size_t cap, int64_t n) {
     }
 }
 
-/* The PepeNet mark: the Pepecoin "P with a stroke", tilted and edged in the
- * badge green, over a white globe. Inline SVG rather than
- * design/pepenetlogo.png — that source is 1024x1024 / 775 KB and would base64
- * to roughly a megabyte on every error page; this is ~1.3 KB.
+/* The DogeNet mark: globe + glyph, tilted and edged in the
+ * badge green. Inline SVG rather than a raster — a 1024x1024 source
+ * would base64 to roughly a megabyte on every error page; this is ~1.3 KB.
  *
  * design/logo.svg is the source of truth; keep the two in step.
  *
@@ -271,8 +270,8 @@ static void serve_error(SSL *b, int code, const char *title,
       "font-size:11.5px;color:var(--mut)}"
       "</style><body><main class=card>"
       "<div class=hd>" PN_LOGO
-      "<div><div class=bn>PepeNet</div>"
-      "<div class=bs>powered by Pepecoin</div></div></div>"
+      "<div><div class=bn>DogeNet</div>"
+      "<div class=bs>powered by Dogecoin</div></div></div>"
       /* order: error code -> requested name -> diagnostics -> description.
          The name belongs beside the code (it identifies WHAT failed); the
          prose explanation is the least urgent thing on the page, so it sits
@@ -358,7 +357,7 @@ static void serve_error(SSL *b, int code, const char *title,
       "refuses to relay any byte from an origin whose key does not match the "
       "published pin.</p>"
       "</details>"
-      "<div class=ft>pepenet-tls " PEPENET_VERSION "</div>"
+      "<div class=ft>dogenet-tls " DOGENET_VERSION "</div>"
       "</main>", e_detail[0] ? e_detail : "(no detail)");
 
     if (o < 0) { free(body); return; }

@@ -1,6 +1,6 @@
 <!doctype html><html lang=en><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>pepenet-tls — fail-closed pages</title>
+<title>dogenet-tls — fail-closed pages</title>
 <style>
 :root{--bg:#f7f8f7;--fg:#12160f;--mut:#5c6659;--card:#fff;--line:#e2e6e0;--accent:#43a75e}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1210;--fg:#e8ece6;--mut:#98a394;--card:#171b18;--line:#252b26}}
@@ -22,7 +22,7 @@ color:var(--mut);font-size:13px}
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
 </style>
 <body><main>
-<h1>pepenet-tls — fail-closed pages</h1>
+<h1>dogenet-tls — fail-closed pages</h1>
 <p class=sub>Every page the DANE proxy can serve in place of a site. Captured from
 the real proxy over TLS, not mocked up. Open any of them directly; they are
 self-contained (no external CSS, fonts or images). Each page carries a chain-sync
@@ -54,7 +54,7 @@ fold yet is not mistaken for a name that does not exist.</p>
 
 <p class=note>
 Regenerate after editing <code>serve_error()</code> in <code>src/proxy.c</code>:
-<code>PEPENET_DUMP_ERROR_PAGES=1 make test</code> (the proxy_test sync-strip
+<code>DOGENET_DUMP_ERROR_PAGES=1 make test</code> (the proxy_test sync-strip
 case writes 404 and 502 here from the live HTML). Toggle your OS between
 light and dark appearance to check both themes — the pages follow
 <code>prefers-color-scheme</code>.

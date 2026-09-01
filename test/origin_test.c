@@ -62,29 +62,29 @@ int main(void) {
 
     /* ── name split ── */
     char apex[64], sub[128];
-    if (origin_split("www.pepenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
-        && !strcmp(apex, "pepenet") && !strcmp(sub, "www"))
-        ok("split www.pepenet.doge → apex=pepenet sub=www");
-    else bad("split www.pepenet.doge");
+    if (origin_split("www.dogenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
+        && !strcmp(apex, "dogenet") && !strcmp(sub, "www"))
+        ok("split www.dogenet.doge → apex=dogenet sub=www");
+    else bad("split www.dogenet.doge");
 
-    if (origin_split("pepenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
-        && !strcmp(apex, "pepenet") && !strcmp(sub, ""))
-        ok("split pepenet.doge → apex=pepenet sub=(apex)");
-    else bad("split pepenet.doge (apex)");
+    if (origin_split("dogenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
+        && !strcmp(apex, "dogenet") && !strcmp(sub, ""))
+        ok("split dogenet.doge → apex=dogenet sub=(apex)");
+    else bad("split dogenet.doge (apex)");
 
-    if (origin_split("a.b.pepenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
-        && !strcmp(apex, "pepenet") && !strcmp(sub, "a.b"))
-        ok("split a.b.pepenet.doge → apex=pepenet sub=a.b");
-    else bad("split a.b.pepenet.doge");
+    if (origin_split("a.b.dogenet.doge", "doge", apex, sizeof apex, sub, sizeof sub)
+        && !strcmp(apex, "dogenet") && !strcmp(sub, "a.b"))
+        ok("split a.b.dogenet.doge → apex=dogenet sub=a.b");
+    else bad("split a.b.dogenet.doge");
 
     /* wrong suffix (this box serves .doge, name is .pepe) → refuse */
-    if (!origin_split("www.pepenet.pepe", "doge", apex, sizeof apex, sub, sizeof sub))
+    if (!origin_split("www.dogenet.pepe", "doge", apex, sizeof apex, sub, sizeof sub))
         ok("split refuses a .pepe name on a .doge resolver");
     else bad("split should refuse cross-suffix");
 
     /* case-insensitive suffix match */
-    if (origin_split("www.pepenet.DOGE", "doge", apex, sizeof apex, sub, sizeof sub)
-        && !strcmp(apex, "pepenet"))
+    if (origin_split("www.dogenet.DOGE", "doge", apex, sizeof apex, sub, sizeof sub)
+        && !strcmp(apex, "dogenet"))
         ok("split is case-insensitive on the suffix");
     else bad("split case-insensitive suffix");
 
@@ -93,7 +93,7 @@ int main(void) {
     for (int i = 0; i < 32; i++) assoc[i] = (uint8_t)(i * 7 + 1);
 
     zone z; memset(&z, 0, sizeof z);
-    snprintf(z.apex, sizeof z.apex, "pepenet");
+    snprintf(z.apex, sizeof z.apex, "dogenet");
     add_A(&z, "www", "192.0.2.7");
     add_TLSA(&z, "_443._tcp.www", 3, 1, 1, assoc);
     add_A(&z, "naked", "192.0.2.8");             /* A but NO TLSA */
@@ -124,14 +124,14 @@ int main(void) {
     else bad("unknown subdomain should be refused");
 
     /* ── CNAME chase (9c: `www CNAME <apex>.<tld>`) ── */
-    add_CNAME(&z, "alias", "pepenet.doge");          /* alias → apex A */
+    add_CNAME(&z, "alias", "dogenet.doge");          /* alias → apex A */
     add_TLSA(&z, "_443._tcp.alias", 3, 1, 1, assoc);
     if (origin_from_zone(&z, "alias", "doge", &oi)
         && !strcmp(oi.host, "192.0.2.1"))
         ok("CNAME alias → apex A chased; pin read at _443._tcp.alias");
     else bad("CNAME to apex");
 
-    add_CNAME(&z, "hop", "alias.pepenet.doge");      /* hop → alias → apex */
+    add_CNAME(&z, "hop", "alias.dogenet.doge");      /* hop → alias → apex */
     add_TLSA(&z, "_443._tcp.hop", 3, 1, 1, assoc);
     if (origin_from_zone(&z, "hop", "doge", &oi)
         && !strcmp(oi.host, "192.0.2.1"))
@@ -157,8 +157,8 @@ int main(void) {
         ok("CNAME to another apex refused (single-zone chase)");
     else bad("cross-apex CNAME should refuse");
 
-    add_CNAME(&z, "loopa", "loopb.pepenet.doge");    /* cycle */
-    add_CNAME(&z, "loopb", "loopa.pepenet.doge");
+    add_CNAME(&z, "loopa", "loopb.dogenet.doge");    /* cycle */
+    add_CNAME(&z, "loopb", "loopa.dogenet.doge");
     add_TLSA(&z, "_443._tcp.loopa", 3, 1, 1, assoc);
     if (!origin_from_zone(&z, "loopa", "doge", &oi))
         ok("CNAME cycle refused (hop cap)");
@@ -166,7 +166,7 @@ int main(void) {
 
     /* the chased pin rule: alias with the A but WITHOUT its own TLSA refuses
      * even though the apex has one — pins are per-SNI, never inherited */
-    add_CNAME(&z, "nopin", "pepenet.doge");
+    add_CNAME(&z, "nopin", "dogenet.doge");
     if (!origin_from_zone(&z, "nopin", "doge", &oi))
         ok("chased alias without its own TLSA refused (no pin inheritance)");
     else bad("pin must not be inherited through CNAME");

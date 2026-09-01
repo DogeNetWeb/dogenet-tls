@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <!--
-  PepeNet mark — the Pepecoin "P with a stroke" over a white globe on a green
-  badge. Vector recreation of design/pepenetlogo.png (1024x1024 raster).
+  DogeNet mark — globe + glyph over a white globe on a green badge.
+  Source of truth for the inline copy in src/proxy.c.
 
   THIS IS THE SOURCE OF TRUTH for the inline copy compiled into the fail-closed
   error pages: PN_LOGO / PN_P in src/proxy.c. Keep the two in step. The inline
@@ -27,8 +27,8 @@
   against the globe without a shadow muddying the glyph at small sizes.
 -->
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'
-     width='512' height='512' role='img' aria-label='PepeNet'>
-  <title>PepeNet</title>
+     width='512' height='512' role='img' aria-label='DogeNet'>
+  <title>DogeNet</title>
 
   <defs>
     <!-- the badge; objectBoundingBox on a circle that spans the whole viewBox -->

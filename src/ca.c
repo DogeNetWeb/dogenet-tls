@@ -25,8 +25,8 @@ static char g_dir[512], g_crt[600], g_key[600], g_cn[64];
 
 /* The instance name — the cert-file prefix (<name>-root-<tld>.{crt,key}) and the
  * root CN. Keyed off the embedding app's identity (desktop: APP_DATA_DIR, e.g.
- * "pepenet"), NOT a fixed product name. Default "pepenet"; set via ca_set_name. */
-static char g_name[64] = "pepenet";
+ * "dogenet"), NOT a fixed product name. Default "dogenet"; set via ca_set_name. */
+static char g_name[64] = "dogenet";
 
 /* Any plain lowercase-alpha label (2..15): the family's hostchain suffixes
  * are `.pepe` and `.doge` today, but the NameConstraints machinery is
@@ -44,7 +44,7 @@ const char *ca_tld(void) { return g_tld; }
 
 /* Point the root CA at a specific directory (the embedding app's data dir), so
  * the root cert/key follow a relocated data dir instead of the default
- * ~/.pepenet. Call before ca_root_ensure. */
+ * ~/.dogenet. Call before ca_root_ensure. */
 void ca_set_dir(const char *dir) {
     if (!dir || !dir[0]) return;
     snprintf(g_dir, sizeof g_dir, "%s", dir);
@@ -52,7 +52,7 @@ void ca_set_dir(const char *dir) {
 }
 
 /* Set the instance name — the cert-file prefix and the root CN (default
- * "pepenet"). The embedding app passes its own identity (e.g. "pepenet"). Call
+ * "dogenet"). The embedding app passes its own identity (e.g. "dogenet"). Call
  * before ca_root_ensure. */
 void ca_set_name(const char *name) {
     if (!name || !name[0]) return;
@@ -79,7 +79,7 @@ static void paths_init(void) {
     if (!g_dir[0]) {                        /* no ca_set_dir override → default */
         const char *home = getenv("HOME");
         if (!home || !home[0]) home = ".";
-        snprintf(g_dir, sizeof g_dir, "%s/.pepenet", home);
+        snprintf(g_dir, sizeof g_dir, "%s/.dogenet", home);
     }
     /* Per-TLD filenames so a doge root and a pepe root can coexist on disk,
      * each still bounded to its own single TLD. */
@@ -165,7 +165,7 @@ static X509 *build_leaf(X509 *root, EVP_PKEY *rootkey,
 
     /* Validate before formatting. X509V3_EXT_conf_nid parses this string as a
      * CONFIG value where ',' separates entries, so an SNI of
-     * "evil.pepenet.doge,DNS:victim.example.com" would mint a leaf carrying a
+     * "evil.dogenet.doge,DNS:victim.example.com" would mint a leaf carrying a
      * SECOND SubjectAltName of the attacker's choosing. The root's critical
      * NameConstraints does reject the resulting chain, but a name we would never
      * knowingly sign should not reach the extension builder at all — this is the

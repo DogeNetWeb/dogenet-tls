@@ -135,9 +135,9 @@ static int resolve(const char *sni, OriginInfo *out, void *ud) {
     out->port = rt->origin_port;
     out->usage = 3; out->selector = 1; out->mtype = 1;
     out->assoc_len = 32;
-    if (!strcmp(sni, "www.pepenet.doge")) { memcpy(out->assoc, rt->good, 32); return 1; }
-    if (!strcmp(sni, "bad.pepenet.doge"))  { memcpy(out->assoc, rt->bad,  32); return 1; }
-    if (!strcmp(sni, "down.pepenet.doge")) { memcpy(out->assoc, rt->good, 32); out->port = 1; return 1; }
+    if (!strcmp(sni, "www.dogenet.doge")) { memcpy(out->assoc, rt->good, 32); return 1; }
+    if (!strcmp(sni, "bad.dogenet.doge"))  { memcpy(out->assoc, rt->bad,  32); return 1; }
+    if (!strcmp(sni, "down.dogenet.doge")) { memcpy(out->assoc, rt->good, 32); out->port = 1; return 1; }
     return 0;   /* unknown name → not served */
 }
 
@@ -224,7 +224,7 @@ static void *ctl_tramp(void *a) {
 }
 
 /* Fail-closed pages report fold vs peer tip through ev.sync. The daemon
- * (cmd_serve) and the desktop/pepenet-web embed both wire this; the page
+ * (cmd_serve) and the desktop/dogenet-web embed both wire this; the page
  * HTML lives in proxy.c so get.sh and the GUI show the same strip. */
 static int64_t g_sync_h, g_sync_ph;
 static void ev_sync(void *u, int64_t *h, int64_t *ph) {
@@ -248,8 +248,8 @@ int main(void) {
     signal(SIGPIPE, SIG_IGN);
     printf("── proxy: browser → mint+DANE → splice (end to end) ──\n");
 
-    /* Hermetic HOME → temp root, never the real ~/.pepenet. */
-    char tmpl[] = "/tmp/pepenet-tls-proxytest.XXXXXX";
+    /* Hermetic HOME → temp root, never the real ~/.dogenet. */
+    char tmpl[] = "/tmp/dogenet-tls-proxytest.XXXXXX";
     char *home = mkdtemp(tmpl);
     if (!home) { perror("mkdtemp"); return 1; }
     setenv("HOME", home, 1);
@@ -259,7 +259,7 @@ int main(void) {
 
     /* Origin: self-signed cert for the served name + its DANE 3 1 1 association. */
     X509 *ocert; EVP_PKEY *okey;
-    if (!self_signed("www.pepenet.doge", &ocert, &okey)) { fprintf(stderr, "origin cert\n"); return 1; }
+    if (!self_signed("www.dogenet.doge", &ocert, &okey)) { fprintf(stderr, "origin cert\n"); return 1; }
     struct route rt;
     memset(&rt, 0, sizeof rt);
     dane_spki_sha256(ocert, rt.good);
@@ -289,16 +289,16 @@ int main(void) {
     char body[16384], cn[128];
 
     /* 1. GOOD — correct TLSA → verified chain + origin bytes. */
-    int v1 = browser_get("127.0.0.1", pport, "www.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+    int v1 = browser_get("127.0.0.1", pport, "www.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
     if (v1 && strstr(body, ORIGIN_BODY)) ok("good name: green lock + origin content spliced through");
     else { bad("good name should verify and splice origin bytes");
            printf("       verified=%d cn=%s body=%.80s\n", v1, cn, body); }
-    if (!strcmp(cn, "www.pepenet.doge")) ok("leaf minted per-SNI (CN == requested name)");
+    if (!strcmp(cn, "www.dogenet.doge")) ok("leaf minted per-SNI (CN == requested name)");
     else { bad("leaf CN should equal the SNI"); printf("       cn=%s\n", cn); }
 
     /* 2. BAD — wrong TLSA → still trusted leaf, but fail-closed page, no origin.
      * 502 on the status line + the DANE verdict named in the diagnostics. */
-    int v2 = browser_get("127.0.0.1", pport, "bad.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+    int v2 = browser_get("127.0.0.1", pport, "bad.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
     if (v2 && strstr(body, "HTTP/1.0 502") && strstr(body, "DANE") && !strstr(body, ORIGIN_BODY))
         ok("bad TLSA: fail-closed page served, origin bytes withheld");
     else { bad("bad TLSA should fail closed without leaking origin");
@@ -309,7 +309,7 @@ int main(void) {
      * is "404 and not one origin byte", and the diagnostic page's wording is
      * expected to keep changing. Greping its prose made this test fail on a
      * pure copy edit, which told us nothing about the behaviour. */
-    int v3 = browser_get("127.0.0.1", pport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+    int v3 = browser_get("127.0.0.1", pport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
     if (v3 && strstr(body, "HTTP/1.0 404") && !strstr(body, ORIGIN_BODY))
         ok("unknown name: verified leaf + local 404, no origin bytes");
     else { bad("unknown name should serve a local 404");
@@ -336,8 +336,8 @@ int main(void) {
         struct ctl_args ca2 = { cfd2, root, rootkey, &rt, &ev };
         pthread_t cth; pthread_create(&cth, NULL, ctl_tramp, &ca2);
 
-        (void)browser_get("127.0.0.1", cport, "www.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
-        (void)browser_get("127.0.0.1", cport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", cport, "www.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", cport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         for (int w = 0; w < 100 && (g_evs.mints < 2 || g_evs.verdicts < 2); w++)
             usleep(20 * 1000);                    /* let the conn threads finish */
         if (g_evs.mints >= 2) ok("ctl: minted event fired per SNI");
@@ -358,7 +358,7 @@ int main(void) {
     }
 
     /* 4b. SYNC STRIP — fail-closed HTML in proxy.c, fed by ev.sync. The page
-     * is the same for pepenet-tls serve, get.sh, pepenet-web, and desktop. */
+     * is the same for dogenet-tls serve, get.sh, dogenet-web, and desktop. */
     printf("── fail-closed page: chain sync strip ──\n");
     {
         int sfd = proxy_listen("127.0.0.1", 0);
@@ -370,7 +370,7 @@ int main(void) {
         pthread_t th; pthread_create(&th, NULL, ctl_tramp, &ca);
 
         g_sync_h = 0; g_sync_ph = 0;
-        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, "HTTP/1.0 404") && strstr(body, "NOT SYNCED")
             && strstr(body, "this node has not downloaded the chain yet"))
             ok("404 at height 0: NOT SYNCED");
@@ -378,18 +378,18 @@ int main(void) {
                printf("       body=%.120s\n", body); }
 
         g_sync_h = 1234567; g_sync_ph = 2000000;
-        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, "CATCHING UP") && strstr(body, "1,234,567")
             && strstr(body, "2,000,000")
             && strstr(body, "will not resolve here until catch-up finishes"))
             ok("404 while behind: CATCHING UP + heights + copy");
         else { bad("404 while behind should say CATCHING UP with both heights");
                printf("       body=%.160s\n", strstr(body, "CATCHING UP") ? strstr(body, "CATCHING UP") : body); }
-        const char *dump = getenv("PEPENET_DUMP_ERROR_PAGES");
+        const char *dump = getenv("DOGENET_DUMP_ERROR_PAGES");
         if (dump && *dump) dump_page("design/error-pages/404-no-such-name.html", body);
 
         g_sync_h = 2000000; g_sync_ph = 2000000;
-        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, "AT TIP") && strstr(body, "block <b>2,000,000</b>")
             && !strstr(body, "will not resolve here until catch-up finishes"))
             ok("404 at tip: AT TIP, no catch-up copy");
@@ -397,14 +397,14 @@ int main(void) {
                printf("       body=%.160s\n", strstr(body, "AT TIP") ? strstr(body, "AT TIP") : body); }
 
         g_sync_h = 1234567; g_sync_ph = 0;
-        (void)browser_get("127.0.0.1", sport, "nope.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "nope.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, ">CHAIN<") && strstr(body, "1,234,567") && !strstr(body, "CATCHING UP"))
             ok("404 with unknown peer tip: CHAIN");
         else { bad("404 with unknown peer should say CHAIN");
                printf("       body=%.160s\n", strstr(body, "CHAIN") ? strstr(body, "CHAIN") : body); }
 
         g_sync_h = 1234567; g_sync_ph = 2000000;
-        (void)browser_get("127.0.0.1", sport, "bad.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "bad.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, "HTTP/1.0 502") && strstr(body, "CATCHING UP")
             && !strstr(body, "will not resolve here until catch-up finishes"))
             ok("502 while behind: CATCHING UP, no 404-only copy");
@@ -413,7 +413,7 @@ int main(void) {
         if (dump && *dump) dump_page("design/error-pages/502-key-mismatch.html", body);
 
         g_sync_h = 1234567; g_sync_ph = 2000000;
-        (void)browser_get("127.0.0.1", sport, "down.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        (void)browser_get("127.0.0.1", sport, "down.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (strstr(body, "HTTP/1.0 504") && strstr(body, "CATCHING UP")
             && !strstr(body, ORIGIN_BODY))
             ok("504 while behind: CATCHING UP, origin bytes withheld");
@@ -450,7 +450,7 @@ int main(void) {
             }
             close(afd);
         }
-        int v5 = browser_get("127.0.0.1", pport, "www.pepenet.doge", root, body, sizeof body, cn, sizeof cn);
+        int v5 = browser_get("127.0.0.1", pport, "www.dogenet.doge", root, body, sizeof body, cn, sizeof cn);
         if (v5 && strstr(body, ORIGIN_BODY)) ok("acceptor alive after 50 aborted connections");
         else bad("abort storm killed the accept loop (dead listener, 502-forever)");
     }

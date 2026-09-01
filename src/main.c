@@ -1,20 +1,20 @@
-/* main.c — pepenet-tls CLI (CA lifecycle + trust install + the DANE proxy).
+/* main.c — dogenet-tls CLI (CA lifecycle + trust install + the DANE proxy).
  *
- *   pepenet-tls [--tld pep|doge|...] gen-ca    create/persist the root
- *   pepenet-tls [--tld ...] mint <name>        print a leaf for <name> (PEM)
- *   pepenet-tls [--tld ...] show               print the root cert as text
- *   pepenet-tls [--tld ...] origin-cert <name> [dir]
+ *   dogenet-tls [--tld pep|doge|...] gen-ca    create/persist the root
+ *   dogenet-tls [--tld ...] mint <name>        print a leaf for <name> (PEM)
+ *   dogenet-tls [--tld ...] show               print the root cert as text
+ *   dogenet-tls [--tld ...] origin-cert <name> [dir]
  *                                              ensure the self-signed ORIGIN
  *                                              cert+key for <name>.<tld> and
  *                                              print its TLSA 3 1 1 rdata
- *   pepenet-tls [--tld ...] install-ca         trust the root (macOS keychain / Linux NSS)
- *   pepenet-tls [--tld ...] uninstall-ca       remove it
- *   pepenet-tls [--tld ...] serve --db <indexer> --store <carrier> [--listen IP] [--port N]
+ *   dogenet-tls [--tld ...] install-ca         trust the root (macOS keychain / Linux NSS)
+ *   dogenet-tls [--tld ...] uninstall-ca       remove it
+ *   dogenet-tls [--tld ...] serve --db <indexer> --store <carrier> [--listen IP] [--port N]
  *                                              run the DANE proxy (slice 4)
  *
- * This box serves ONE TLD — pick it with --tld (or $PEPENET_TLD); default doge.
+ * This box serves ONE TLD — pick it with --tld (or $DOGENET_TLD); default doge.
  * `serve` reuses the TLD as the DNS suffix: it resolves `<name>.<tld>` against
- * the pepenet ownership View + carrier Store, DANE-verifies the origin, and
+ * the dogenet ownership View + carrier Store, DANE-verifies the origin, and
  * presents the browser a per-SNI leaf off the name-constrained root.
  */
 #include "ca.h"
@@ -34,7 +34,7 @@
 
 static int usage(void) {
     fprintf(stderr,
-        "usage: pepenet-tls [--tld pep|doge|...] {gen-ca | mint <name> | show |\n"
+        "usage: dogenet-tls [--tld pep|doge|...] {gen-ca | mint <name> | show |\n"
         "         origin-cert <name> [dir] | probe <name> <host[:port]> |\n"
         "         install-ca | uninstall-ca |\n"
         "         serve --db <indexer> --store <carrier> [--listen IP] [--port N]}\n");
@@ -72,7 +72,7 @@ static int cmd_probe(const char *name, const char *hostport) {
 }
 
 /* origin-cert — the SERVER half of DANE: ensure a self-signed cert+key for
- * <name>.<tld> (default dir ~/.pepenet) and print the `TLSA 3 1 1` rdata the
+ * <name>.<tld> (default dir ~/.dogenet) and print the `TLSA 3 1 1` rdata the
  * owner publishes at `_443._tcp`. Idempotent: an existing pair is reported,
  * never rotated. */
 static int cmd_origin_cert(const char *name, const char *dir) {
@@ -80,7 +80,7 @@ static int cmd_origin_cert(const char *name, const char *dir) {
     if (!dir) {
         const char *home = getenv("HOME");
         if (!home || !home[0]) home = ".";
-        snprintf(home_dir, sizeof home_dir, "%s/.pepenet", home);
+        snprintf(home_dir, sizeof home_dir, "%s/.dogenet", home);
         dir = home_dir;
     }
     snprintf(fqdn, sizeof fqdn, "%s.%s", name, ca_tld());
@@ -106,7 +106,7 @@ static void ev_sync(void *u, int64_t *h, int64_t *ph) {
 }
 
 /* serve — the DANE proxy: listen on loopback:port, resolve each SNI against the
- * pepenet store, DANE-verify the origin, splice on success (slice 4). */
+ * dogenet store, DANE-verify the origin, splice on success (slice 4). */
 static int cmd_serve(int argc, char **argv) {
     const char *db = NULL, *store = NULL, *listen = "127.0.0.1";
     int port = 8443;
@@ -129,7 +129,7 @@ static int cmd_serve(int argc, char **argv) {
         return 1;
     }
 
-    fprintf(stderr, "pepenet-tls: serving .%s on %s:%d (store=%s indexer=%s)\n",
+    fprintf(stderr, "dogenet-tls: serving .%s on %s:%d (store=%s indexer=%s)\n",
             ca_tld(), listen, port, store, db);
     int lfd = proxy_listen(listen, port);
     if (lfd < 0) {
@@ -180,10 +180,10 @@ static int cmd_show(void) {
 }
 
 int main(int argc, char **argv) {
-    /* TLD selection: --tld <t> (highest priority), else $PEPENET_TLD, else the
+    /* TLD selection: --tld <t> (highest priority), else $DOGENET_TLD, else the
      * ca.c default ("doge"). Strip the flag so subcommand parsing is unchanged. */
-    const char *env = getenv("PEPENET_TLD");
-    if (env && !ca_set_tld(env)) { fprintf(stderr, "bad $PEPENET_TLD '%s'\n", env); return 2; }
+    const char *env = getenv("DOGENET_TLD");
+    if (env && !ca_set_tld(env)) { fprintf(stderr, "bad $DOGENET_TLD '%s'\n", env); return 2; }
     if (argc >= 3 && !strcmp(argv[1], "--tld")) {
         if (!ca_set_tld(argv[2])) { fprintf(stderr, "bad --tld '%s' (a lowercase label, e.g. pep|doge)\n", argv[2]); return 2; }
         argv += 2; argc -= 2;

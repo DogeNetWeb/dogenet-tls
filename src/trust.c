@@ -23,7 +23,7 @@ int trust_install(const char *certpath) {
 int trust_uninstall(const char *certpath, const char *cn) {
     char cmd[1400];
     /* Drop trust settings, then delete the cert by CN (the active TLD's root,
-     * e.g. "pepenet .doge root CA"). Both best-effort so an already-partly-
+     * e.g. "dogenet .doge root CA"). Both best-effort so an already-partly-
      * removed state still returns cleanly. */
     snprintf(cmd, sizeof cmd,
         "security remove-trusted-cert \"%s\" 2>/dev/null; "
@@ -36,11 +36,11 @@ int trust_uninstall(const char *certpath, const char *cn) {
 #elif defined(__linux__)
 
 /* Nickname in the NSS db: the cert file's basename without .crt
- * (e.g. ~/.pepenet/pepenet-root-pepe.crt → "pepenet-root-pepe"). Stable
+ * (e.g. ~/.dogenet/dogenet-root-pepe.crt → "dogenet-root-pepe"). Stable
  * across install/uninstall without needing the CN at install time. */
 static void nss_nick(const char *certpath, char *out, size_t cap) {
     const char *b = certpath ? strrchr(certpath, '/') : NULL;
-    b = b ? b + 1 : (certpath ? certpath : "pepenet-root");
+    b = b ? b + 1 : (certpath ? certpath : "dogenet-root");
     snprintf(out, cap, "%s", b);
     size_t n = strlen(out);
     if (n > 4 && strcmp(out + n - 4, ".crt") == 0) out[n - 4] = 0;

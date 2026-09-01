@@ -112,7 +112,7 @@ size_t tls_loopback_get(uint16_t port, const char *sni, const char *path,
     char req[512];
     int rn = snprintf(req, sizeof req,
                       "GET %s HTTP/1.1\r\nHost: %s\r\n"
-                      "User-Agent: pepenet-desktop\r\nAccept: */*\r\n"
+                      "User-Agent: dogenet-desktop\r\nAccept: */*\r\n"
                       "Connection: close\r\n\r\n", path, sni);
     if (SSL_write(s, req, rn) != rn) goto done;
 

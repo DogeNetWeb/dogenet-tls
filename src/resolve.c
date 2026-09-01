@@ -67,8 +67,8 @@ int resolver_resolve(const char *sni, OriginInfo *out, void *ud) {
      * compares with strcasecmp. This path is the odd one out because its name
      * arrives from the TLS SNI rather than the wire decoder — origin_split only
      * matches the SUFFIX case-insensitively and copies the apex through with its
-     * original case, so `PEPENET.PEPE` missed a byte-exact store key that
-     * `pepenet.pepe` hit. */
+     * original case, so `DOGENET.PEPE` missed a byte-exact store key that
+     * `dogenet.pepe` hit. */
     for (char *c = apex; *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';
     for (char *c = sub;  *c; c++) if (*c >= 'A' && *c <= 'Z') *c += 'a' - 'A';
 
@@ -98,10 +98,10 @@ int resolver_resolve(const char *sni, OriginInfo *out, void *ud) {
     /* Test-only origin-port override. v1 pins the origin at :443 (TLSA at
      * _443._tcp — origin_from_zone sets out->port = 443). For a local test we
      * want to dial an already-running origin on a non-privileged port (e.g. the
-     * pepenet site's Kestrel :5001) without a loopback :443 alias. Off by
+     * dogenet site's Kestrel :5001) without a loopback :443 alias. Off by
      * default, so origin.c stays pure and origin_test is unaffected. */
     if (ok) {
-        const char *op = getenv("PEPENET_ORIGIN_PORT");
+        const char *op = getenv("DOGENET_ORIGIN_PORT");
         if (op && *op) {
             int p = atoi(op);
             if (p > 0 && p < 65536) out->port = (uint16_t)p;

@@ -1,4 +1,4 @@
-# pepenet-tls — a DANE-enforcing local TLS proxy for `.doge` / `.pepe`
+# dogenet-tls — a DANE-enforcing local TLS proxy for `.doge` / `.pepe`
 
 **Status:** slices 1–4 built (`make test` 32/32). The resolver, proxy, name-constrained
 CA, and DANE dial are each unit-proven; the `serve` binary + dnsd `--tls-redirect` hook +
@@ -7,21 +7,21 @@ wants a live verification pass. This document is the architecture and, in partic
 **security model** the implementation must honor. Sliced build plan at the end.
 
 **One TLD per install.** A given box is a `.doge` network *or* a `.pepe` network, never
-both — selected with `ca_set_tld` / `--tld doge|pepe` / `$PEPENET_TLD` (default `doge`).
+both — selected with `ca_set_tld` / `--tld doge|pepe` / `$DOGENET_TLD` (default `doge`).
 The root is bounded to that single TLD, so a doge box's hot key cannot mint a `.pepe`
-leaf at all. Roots live per-TLD at `~/.pepenet/pepenet-root-<tld>.{crt,key}`.
+leaf at all. Roots live per-TLD at `~/.dogenet/dogenet-root-<tld>.{crt,key}`.
 
 ## 1. What this is and why
 
-The pepenet namespace already publishes an **authenticated key directory**: a name's
-owner is the only signer, and `pepenet-dns` (`dnsd`) serves that owner's records —
+The dogenet namespace already publishes an **authenticated key directory**: a name's
+owner is the only signer, and `dogenet-dns` (`dnsd`) serves that owner's records —
 including **DANE** records (`TLSA`, `SSHFP`, `OPENPGPKEY`) — resolved off the chain +
 mesh with no certificate authority anywhere in the trust path. The chain *is* the CA.
 
 Browsers, however, do not speak DANE. So today `https://foo.doge` resolves fine but shows
 a certificate warning: the origin's self-signed leaf chains to no CA the browser trusts.
 This component closes that last gap. It is the payoff line of the whole DNS effort —
-**CA-free authenticated TLS**: a padlock on `foo.doge` whose trust root is the Pepecoin /
+**CA-free authenticated TLS**: a padlock on `foo.doge` whose trust root is the
 Dogecoin chain, not Verisign.
 
 It works by interposing a **local, name-constrained TLS proxy** between the browser and
@@ -56,8 +56,8 @@ non-negotiable pillar**:
 
 Two encoding notes proven in slice 1 (`ca_test`, both TLD configs): the TLD name carries
 **no leading dot** — RFC 5280 dNSName constraints are label-suffix matched, so `doge`
-already permits `foo.doge` while rejecting `foo.com`, `notdoge`, `pepenet.doge.evil.com`
-(a name that merely *contains* the TLD), and crucially `pepenet.pepe` (the other TLD). And
+already permits `foo.doge` while rejecting `foo.com`, `notdoge`, `dogenet.doge.evil.com`
+(a name that merely *contains* the TLD), and crucially `dogenet.pepe` (the other TLD). And
 `permittedSubtrees` is itself the allowlist — anything not matching a permitted
 subtree of its type is denied — so no empty-`dNSName` exclusion is needed (that
 form is ambiguous/risky). The IP exclusion is the one real add: `permittedSubtrees`
@@ -68,7 +68,7 @@ Consequences we rely on:
 
 - The CA key **is** hot (it mints leaves per-connection), but a theft lets the attacker
   MITM exactly `*.<tld>` on machines that installed *this specific* root — nothing on the
-  real internet, and not even the other pepenet TLD. The blast radius equals the single
+  real internet, and not even the other dogenet TLD. The blast radius equals the single
   TLD this box serves.
 - Leaf names go in the SAN `dNSName` (never rely on CN), because NC is enforced against SAN.
 - The constraint is marked **critical** so a verifier that cannot process it must reject,
@@ -81,7 +81,7 @@ Secondary boundaries:
   DANE-verify. Mismatch ⇒ fail closed (§6).
 - **Loopback only.** The proxy listens on `127.0.0.1`; it is never a network service.
 - **Uninstall is first-class.** `trust.c --uninstall` removes the root from every store it
-  touched; the CA files live only under `~/.pepenet/`.
+  touched; the CA files live only under `~/.dogenet/`.
 
 ## 3. End-to-end flow
 
@@ -93,7 +93,7 @@ Secondary boundaries:
   │         │                           └──────────────────────────┘
   │         │  2. TLS ClientHello (SNI=foo.doge)
   │         │ ───────────────────────► ┌──────────────────────────┐
-  │         │                          │ pepenet-tls (proxy)       │
+  │         │                          │ dogenet-tls (proxy)       │
   │         │                          │  a. read SNI              │
   │         │                          │  b. fold store → real A + │
   │         │                          │     _443._tcp TLSA(3 1 1) │
@@ -145,19 +145,19 @@ the system default. This must be pinned in the Makefile, not left to `PATH`.
 
 ## 5. Components
 
-New sibling repo `pepenet-tls/` (keeps OpenSSL — the family's first heavy dependency — out
+New sibling repo `dogenet-tls/` (keeps OpenSSL — the family's first heavy dependency — out
 of the lean `dnsd` resolver; the proxy links it, the resolver does not).
 
 | File | Responsibility |
 |------|----------------|
-| `src/ca.c` | Generate the **name-constrained** root (≈10 y) into `~/.pepenet/pepenet-root.{crt,key}`; mint + cache per-SNI leaves (short TTL, SAN `dNSName=<name>`) signed by it. |
+| `src/ca.c` | Generate the **name-constrained** root (≈10 y) into `~/.dogenet/dogenet-root.{crt,key}`; mint + cache per-SNI leaves (short TTL, SAN `dNSName=<name>`) signed by it. |
 | `src/trust.c` | Install / uninstall the root in the **user** store: macOS `security add-trusted-cert -r trustRoot` (login keychain, GUI auth = consent); Linux `certutil -A` into `~/.pki/nssdb` (unprivileged; `certutil` missing is a no-op). The Linux **system** store (`/usr/local/share/ca-certificates` + `update-ca-certificates`, or Fedora `update-ca-trust`) is `install-linux.sh` as root — there is no keychain GUI, so polkit/sudo is consent. |
-| `src/proxy.c` | `127.0.0.1` TLS listener; SNI → fold zone (reuses `dns_fold`/`zone_apply`/`sp_view_*` from `pepenet-dns` + `pepenet-mesh`, **unchanged**) → OpenSSL-DANE dial to the real origin → present minted leaf → splice plaintext. |
+| `src/proxy.c` | `127.0.0.1` TLS listener; SNI → fold zone (reuses `dns_fold`/`zone_apply`/`sp_view_*` from `dogenet-dns` + `dogenet-mesh`, **unchanged**) → OpenSSL-DANE dial to the real origin → present minted leaf → splice plaintext. |
 | `src/main.c` | Daemon glue: open the shared carrier store read-only (WAL read-conn, exactly as `dnsd`'s resolver thread does), event loop. |
-| `install.sh` | The one privileged step. Darwin: plant the CA (`install-ca`), write `/etc/resolver/<tld>`, add the pf redirect `127.0.0.1:443 → :8443`. Linux (`install-linux.sh`): nssdb as the user, system CA store, systemd-resolved split-DNS on dummy `pn-<tld>` (`~$TLD` → `127.0.0.1:15353`, never a global `DNS=`), nftables `:443 → :proxy` (best-effort). |
+| `install.sh` | The one privileged step. Darwin: plant the CA (`install-ca`), write `/etc/resolver/<tld>`, add the pf redirect `127.0.0.1:443 → :8443`. Linux (`install-linux.sh`): nssdb as the user, system CA store, systemd-resolved split-DNS on dummy `dn-<tld>` (`~$TLD` → `127.0.0.1:15353`, never a global `DNS=`), nftables `:443 → :proxy` (best-effort). |
 
 **Reuse, do not reimplement:** zone folding, ownership view, and record decode all come
-from the existing `pepenet-dns` / `pepenet-mesh` trees by linking, matching how `dnsd`
+from the existing `dogenet-dns` / `dogenet-mesh` trees by linking, matching how `dnsd`
 itself was assembled.
 
 ### Two changes outside this repo
@@ -453,7 +453,7 @@ The cryptography is the easy part; **independence and namespace legitimacy are t
   and `TLSA` at `_443._tcp`.
 - **ECH / encrypted SNI** would hide the SNI the proxy routes on — out of scope; `.doge`
   origins are ours and won't deploy it in v1.
-- **Desktop embed.** Long-term the proxy rides in `pepenet-desktop` like the resolver/mesh;
+- **Desktop embed.** Long-term the proxy rides in `dogenet-desktop` like the resolver/mesh;
   OpenSSL-vs-embeddable-TLS for that build is revisited then (v1 is the standalone daemon).
 - **DANE-TA (usage 2).** v1 pins DANE-EE (`3 1 1`) only — the CA-free case. TA support is a
   later add if a `.doge` operator wants an intermediate.

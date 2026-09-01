@@ -27,7 +27,7 @@
  *   5. REPEATED START/STOP with connections in flight, port released each time.
  *
  * All randomness is a seeded SplitMix64 (never rand()); the seed is printed and
- * can be pinned with PEPENET_JITTER_SEED=<n> to reproduce a failure exactly.
+ * can be pinned with DOGENET_JITTER_SEED=<n> to reproduce a failure exactly.
  * JIT_CLIENTS=<n> and JIT_SECS=<n> resize the load phase (default 24 / 5 s).
  *
  * A watchdog alarm fails the run with a message rather than hanging CI, and
@@ -254,9 +254,9 @@ struct route { char ip[16]; int port; uint8_t pin[32]; };
 static int resolve(const char *sni, OriginInfo *out, void *ud) {
     struct route *rt = ud;
     memset(out, 0, sizeof *out);
-    /* only names under .pepenet.doge (and the apex) are served */
+    /* only names under .dogenet.doge (and the apex) are served */
     size_t n = strlen(sni);
-    const char *suf = "pepenet.doge";
+    const char *suf = "dogenet.doge";
     size_t sl = strlen(suf);
     int served = (n == sl && !strcmp(sni, suf)) ||
                  (n > sl && sni[n - sl - 1] == '.' && !strcmp(sni + n - sl, suf));
@@ -402,7 +402,7 @@ static void *load_thread(void *a) {
     while (!g_load_stop) {
         char nonce[24];
         snprintf(nonce, sizeof nonce, "%d-%08x", id, (unsigned)(sm64(&s) & 0xFFFFFFFF));
-        switch (browser_once(&s, "www.pepenet.doge", nonce, 1)) {
+        switch (browser_once(&s, "www.dogenet.doge", nonce, 1)) {
         case TX_OK:      atomic_fetch_add(&g_n_ok, 1);      break;
         case TX_CONNECT: atomic_fetch_add(&g_n_connect, 1); break;
         case TX_TLS:     atomic_fetch_add(&g_n_tls, 1);     break;
@@ -459,10 +459,10 @@ static void *abuse_thread(void *a) {
             SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
             SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
             SSL *ssl = SSL_new(ctx);
-            SSL_set_tlsext_host_name(ssl, "www.pepenet.doge");
+            SSL_set_tlsext_host_name(ssl, "www.dogenet.doge");
             SSL_set_fd(ssl, fd);
             if (SSL_connect(ssl) == 1) {
-                const char *req = "GET /abrupt HTTP/1.0\r\nHost: www.pepenet.doge\r\n\r\n";
+                const char *req = "GET /abrupt HTTP/1.0\r\nHost: www.dogenet.doge\r\n\r\n";
                 SSL_write(ssl, req, (int)strlen(req));
                 char b[512];
                 SSL_read(ssl, b, sizeof b);       /* take a sip, then vanish */
@@ -502,17 +502,17 @@ int main(void) {
     signal(SIGALRM, on_alarm);
     setbuf(stdout, NULL);
 
-    const char *seedenv = getenv("PEPENET_JITTER_SEED");
+    const char *seedenv = getenv("DOGENET_JITTER_SEED");
     g_seed = seedenv && *seedenv ? strtoull(seedenv, NULL, 0)
                                  : ((uint64_t)time(NULL) << 20) ^ (uint64_t)getpid();
     printf("── proxy jitter/abuse suite ──\n");
-    printf("seed = %llu   (re-run exactly: PEPENET_JITTER_SEED=%llu make check-jitter)\n",
+    printf("seed = %llu   (re-run exactly: DOGENET_JITTER_SEED=%llu make check-jitter)\n",
            (unsigned long long)g_seed, (unsigned long long)g_seed);
 
     watchdog(300);                      /* whole-suite deadline */
 
     /* hermetic root CA in a temp HOME */
-    char tmpl[] = "/tmp/pepenet-jitter.XXXXXX";
+    char tmpl[] = "/tmp/dogenet-jitter.XXXXXX";
     char *home = mkdtemp(tmpl);
     if (!home) { perror("mkdtemp"); return 1; }
     setenv("HOME", home, 1);
@@ -546,7 +546,7 @@ int main(void) {
     /* sanity: one clean transaction before any abuse */
     {
         uint64_t s = g_seed;
-        CHECK(browser_once(&s, "www.pepenet.doge", "sanity", 0) == TX_OK,
+        CHECK(browser_once(&s, "www.dogenet.doge", "sanity", 0) == TX_OK,
               "baseline: a single clean request returns the exact origin body");
     }
 
@@ -626,13 +626,13 @@ int main(void) {
             uint64_t s = g_seed + (uint64_t)i;
             char nonce[32];
             snprintf(nonce, sizeof nonce, "single-%d", i);
-            if (browser_once(&s, "www.pepenet.doge", nonce, 0) == TX_STALL) single_stall++;
+            if (browser_once(&s, "www.dogenet.doge", nonce, 0) == TX_STALL) single_stall++;
         }
         for (int i = 0; i < N; i++) {
             uint64_t s = g_seed + (uint64_t)i;
             char nonce[32];
             snprintf(nonce, sizeof nonce, "multi-%d", i);
-            if (browser_once_chunked(&s, "www.pepenet.doge", nonce) == TX_STALL) multi_stall++;
+            if (browser_once_chunked(&s, "www.dogenet.doge", nonce) == TX_STALL) multi_stall++;
         }
         printf("     one-record requests: %d/%d stalled;  multi-record: %d/%d stalled\n",
                single_stall, N, multi_stall, N);
@@ -659,7 +659,7 @@ int main(void) {
         for (int i = 0; i < 40; i++) {
             char nonce[32];
             snprintf(nonce, sizeof nonce, "ctrl-%d", i);
-            if (browser_once(&s, "www.pepenet.doge", nonce, 0) == TX_OK) ctrl_ok++;
+            if (browser_once(&s, "www.dogenet.doge", nonce, 0) == TX_OK) ctrl_ok++;
             else ctrl_bad++;
             usleep(20 * 1000);
         }
@@ -683,21 +683,21 @@ int main(void) {
     printf("-- adversarial SNI --\n");
     {
         char big[512], huge[512];
-        memset(big, 'a', 250); strcpy(big + 250, ".pepenet.doge");
+        memset(big, 'a', 250); strcpy(big + 250, ".dogenet.doge");
         memset(huge, 'b', 300); huge[300] = 0;
 
         struct { const char *sni; const char *what; } cases[] = {
             { "",                        "empty SNI" },
             { huge,                      "300-byte SNI" },
             { big,                       "263-byte SNI under a served zone" },
-            { "a\r\nb.pepenet.doge",     "SNI with CR/LF" },
-            { "a\tb.pepenet.doge",       "SNI with a tab" },
-            { "xn--bcher-kva.pepenet.doge", "punycode SNI" },
-            { "b\xc3\xbc" "cher.pepenet.doge",  "non-ASCII (raw UTF-8) SNI" },
+            { "a\r\nb.dogenet.doge",     "SNI with CR/LF" },
+            { "a\tb.dogenet.doge",       "SNI with a tab" },
+            { "xn--bcher-kva.dogenet.doge", "punycode SNI" },
+            { "b\xc3\xbc" "cher.dogenet.doge",  "non-ASCII (raw UTF-8) SNI" },
             { "example.com",             "not a .doge name at all" },
-            { "unresolvable.pepenet.doge", "name whose zone does not resolve" },
-            { "..pepenet.doge",          "empty label in the SNI" },
-            { "www.pepenet.doge.evil.com", "served name as a prefix of another" },
+            { "unresolvable.dogenet.doge", "name whose zone does not resolve" },
+            { "..dogenet.doge",          "empty label in the SNI" },
+            { "www.dogenet.doge.evil.com", "served name as a prefix of another" },
         };
 
         for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
@@ -729,8 +729,8 @@ int main(void) {
              * That is a mangled spelling of the SAME requested name, not a
              * different site, and browsers send punycode A-labels rather than
              * raw UTF-8 anyway — so it is noted, not failed.) */
-            int impersonation = hs && cn[0] && strcmp(cn, "www.pepenet.doge") == 0
-                                && strcmp(cases[i].sni, "www.pepenet.doge") != 0;
+            int impersonation = hs && cn[0] && strcmp(cn, "www.dogenet.doge") == 0
+                                && strcmp(cases[i].sni, "www.dogenet.doge") != 0;
             CHECK(!impersonation, cases[i].what);
             if (impersonation)
                 printf("     asked '%s' but got a cert for the REAL site: CN '%s'\n",
@@ -752,7 +752,7 @@ int main(void) {
          * signs. The root's critical NameConstraints (permitted DNS:doge) is
          * what stops this being a real forgery, so this asserts BOTH halves:
          * the out-of-TLD name must not end up trusted. */
-        const char *inj = "evil.pepenet.doge,DNS:victim.example.com";
+        const char *inj = "evil.dogenet.doge,DNS:victim.example.com";
         SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
         X509_STORE_add_cert(SSL_CTX_get_cert_store(ctx), g_root);
         SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
@@ -797,7 +797,7 @@ int main(void) {
 
         /* the proxy is still healthy after all of that */
         uint64_t s = g_seed ^ 0xABCDEFULL;
-        CHECK(browser_once(&s, "www.pepenet.doge", "after-adversarial", 0) == TX_OK,
+        CHECK(browser_once(&s, "www.dogenet.doge", "after-adversarial", 0) == TX_OK,
               "proxy still serves correct content after every adversarial SNI");
     }
 
@@ -825,7 +825,7 @@ int main(void) {
         CHECK(t_after < 0 || t_after <= t_before + 8, "thread count did not grow");
 
         uint64_t s2 = g_seed;
-        CHECK(browser_once(&s2, "www.pepenet.doge", "after-leakcheck", 0) == TX_OK,
+        CHECK(browser_once(&s2, "www.dogenet.doge", "after-leakcheck", 0) == TX_OK,
               "proxy still serving after 400 short connections");
     }
 
@@ -853,7 +853,7 @@ int main(void) {
                half-open sockets that will still be pending at stop time */
             int save = g_pport;
             g_pport = port;
-            if (browser_once(&s, "www.pepenet.doge", "cycle", 0) == TX_OK) served++;
+            if (browser_once(&s, "www.dogenet.doge", "cycle", 0) == TX_OK) served++;
             int inflight[4];
             for (int k = 0; k < 4; k++) {
                 inflight[k] = tcp_connect(port);
@@ -887,7 +887,7 @@ int main(void) {
         CHECK(served == 12, "each cycle served a correct response before stopping");
 
         uint64_t s2 = g_seed;
-        CHECK(browser_once(&s2, "www.pepenet.doge", "after-cycles", 0) == TX_OK,
+        CHECK(browser_once(&s2, "www.dogenet.doge", "after-cycles", 0) == TX_OK,
               "the original proxy still serves after 12 start/stop cycles");
     }
 
@@ -915,7 +915,7 @@ int main(void) {
             X509_STORE_add_cert(SSL_CTX_get_cert_store(ctx), g_root);
             SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
             SSL *ssl = SSL_new(ctx);
-            SSL_set_tlsext_host_name(ssl, "unresolvable.pepenet.doge");
+            SSL_set_tlsext_host_name(ssl, "unresolvable.dogenet.doge");
             int fd = tcp_connect(g_pport);
             SSL_set_fd(ssl, fd);
             if (SSL_connect(ssl) == 1) {
@@ -947,9 +947,9 @@ int main(void) {
     /* remove the throwaway root CA + its temp HOME */
     {
         char p1[600];
-        snprintf(p1, sizeof p1, "%s/.pepenet/pepenet-root-doge.crt", home); unlink(p1);
-        snprintf(p1, sizeof p1, "%s/.pepenet/pepenet-root-doge.key", home); unlink(p1);
-        snprintf(p1, sizeof p1, "%s/.pepenet", home); rmdir(p1);
+        snprintf(p1, sizeof p1, "%s/.dogenet/dogenet-root-doge.crt", home); unlink(p1);
+        snprintf(p1, sizeof p1, "%s/.dogenet/dogenet-root-doge.key", home); unlink(p1);
+        snprintf(p1, sizeof p1, "%s/.dogenet", home); rmdir(p1);
         rmdir(home);
     }
 

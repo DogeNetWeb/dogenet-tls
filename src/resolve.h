@@ -1,11 +1,11 @@
 /* resolve.h — the live resolver: SNI name → origin endpoint + on-chain TLSA,
- * backed by pepenet-dns's ownership View + carrier Store, folded exactly as
+ * backed by dogenet-dns's ownership View + carrier Store, folded exactly as
  * dnsd folds it. This is the store/view plumbing around origin.{h,c}; the byte
  * logic it delegates to is unit-pinned there. Plugs into proxy_serve as the
  * real proxy_resolver (replacing slice 3's stub).
  */
-#ifndef PEPENET_TLS_RESOLVE_H
-#define PEPENET_TLS_RESOLVE_H
+#ifndef DOGENET_TLS_RESOLVE_H
+#define DOGENET_TLS_RESOLVE_H
 
 #include "proxy.h"   /* OriginInfo, proxy_resolver */
 

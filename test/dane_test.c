@@ -90,7 +90,7 @@ int main(void) {
     printf("── dane: OpenSSL DANE-EE origin dial (TLSA 3 1 1) ──\n");
 
     X509 *cert; EVP_PKEY *key;
-    if (!self_signed("www.pepenet.doge", &cert, &key)) { fprintf(stderr, "cert gen\n"); return 1; }
+    if (!self_signed("www.dogenet.doge", &cert, &key)) { fprintf(stderr, "cert gen\n"); return 1; }
 
     uint8_t good[32], bad_[32];
     if (!dane_spki_sha256(cert, good)) { fprintf(stderr, "spki digest\n"); return 1; }
@@ -119,22 +119,22 @@ int main(void) {
 
     char err[160];
 
-    DaneResult r1 = dane_dial("127.0.0.1", port, "www.pepenet.doge",
+    DaneResult r1 = dane_dial("127.0.0.1", port, "www.dogenet.doge",
                               3, 1, 1, good, 32, err, sizeof err);
     if (r1 == DANE_OK) ok("matching TLSA 3 1 1 → authenticated, no CA");
     else { bad("matching TLSA should authenticate"); printf("       got %d (%s)\n", r1, err); }
 
-    DaneResult r2 = dane_dial("127.0.0.1", port, "www.pepenet.doge",
+    DaneResult r2 = dane_dial("127.0.0.1", port, "www.dogenet.doge",
                               3, 1, 1, bad_, 32, err, sizeof err);
     if (r2 == DANE_MISMATCH) ok("wrong TLSA (1 byte flipped) → refused");
     else { bad("wrong TLSA should be refused"); printf("       got %d (%s)\n", r2, err); }
 
     /* DANE-EE authenticates the KEY, not the name (RFC 7671 §5.1): the origin's
-     * cert is for `www.pepenet.doge` but we dial under a totally different name.
+     * cert is for `www.dogenet.doge` but we dial under a totally different name.
      * The key still matches, so it MUST authenticate — this is the real-world
      * case (a `.pepe` name in front of an origin whose cert is `*.example.com`).
      * Regression guard for the missing DANE_FLAG_NO_DANE_EE_NAMECHECKS. */
-    DaneResult r_nm = dane_dial("127.0.0.1", port, "pepenet.pepe",
+    DaneResult r_nm = dane_dial("127.0.0.1", port, "dogenet.pepe",
                                 3, 1, 1, good, 32, err, sizeof err);
     if (r_nm == DANE_OK) ok("cert name != DANE name → still authenticates (key, not name)");
     else { bad("name-mismatch DANE-EE should authenticate by key"); printf("       got %d (%s)\n", r_nm, err); }
@@ -143,7 +143,7 @@ int main(void) {
     close(lfd);
 
     /* Origin gone → connection refused on the now-closed port. */
-    DaneResult r3 = dane_dial("127.0.0.1", port, "www.pepenet.doge",
+    DaneResult r3 = dane_dial("127.0.0.1", port, "www.dogenet.doge",
                               3, 1, 1, good, 32, err, sizeof err);
     if (r3 == DANE_CONNECT_ERR) ok("unreachable origin → connect error (not a false accept)");
     else { bad("unreachable origin should report connect error"); printf("       got %d (%s)\n", r3, err); }

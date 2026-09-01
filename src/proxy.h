@@ -9,10 +9,10 @@
  *      never relay bytes from an origin we could not authenticate.
  *
  * Resolution is injected (proxy_resolver) so the core is testable in isolation;
- * the real daemon (slice 4) plugs in the pepenet-dns zone fold.
+ * the real daemon (slice 4) plugs in the dogenet-dns zone fold.
  */
-#ifndef PEPENET_TLS_PROXY_H
-#define PEPENET_TLS_PROXY_H
+#ifndef DOGENET_TLS_PROXY_H
+#define DOGENET_TLS_PROXY_H
 
 #include <stdint.h>
 #include <stddef.h>

@@ -1,24 +1,24 @@
 /* origin.h — pure name→origin resolution logic (no store, no network, no TLS).
  *
  * This is the testable heart of slice 4's resolver: turning an SNI name plus a
- * folded pepenet zone into the OriginInfo the proxy dials + DANE-verifies. It
+ * folded dogenet zone into the OriginInfo the proxy dials + DANE-verifies. It
  * deliberately holds NO I/O — the store/view plumbing lives in resolve.{h,c},
  * so this layer can be proven hermetically against a hand-built zone (see
  * origin_test.c). The byte-level TLSA extraction here is exactly what feeds
  * dane_connect, so it is security-critical and unit-pinned.
  */
-#ifndef PEPENET_TLS_ORIGIN_H
-#define PEPENET_TLS_ORIGIN_H
+#ifndef DOGENET_TLS_ORIGIN_H
+#define DOGENET_TLS_ORIGIN_H
 
 #include <stddef.h>
 #include "proxy.h"   /* OriginInfo */
-#include "zone.h"    /* zone / zone_rec — the fold, from pepenet-dns */
+#include "zone.h"    /* zone / zone_rec — the fold, from dogenet-dns */
 
 /* Split an SNI into (apex, sub) for a given TLD suffix, mirroring dnsd's
- * suffix-strip + last-dot split (a pepenet apex is one dotless label).
- *   ("www.pepenet.doge", "doge") -> apex="pepenet", sub="www"     , 1
- *   ("pepenet.doge",     "doge") -> apex="pepenet", sub=""        , 1  (apex itself)
- *   ("a.b.pepenet.doge", "doge") -> apex="pepenet", sub="a.b"     , 1
+ * suffix-strip + last-dot split (a dogenet apex is one dotless label).
+ *   ("www.dogenet.doge", "doge") -> apex="dogenet", sub="www"     , 1
+ *   ("dogenet.doge",     "doge") -> apex="dogenet", sub=""        , 1  (apex itself)
+ *   ("a.b.dogenet.doge", "doge") -> apex="dogenet", sub="a.b"     , 1
  * Returns 0 if the name is not under `.suffix` or the apex would be empty. */
 int origin_split(const char *sni, const char *suffix,
                  char *apex, size_t apexcap, char *sub, size_t subcap);

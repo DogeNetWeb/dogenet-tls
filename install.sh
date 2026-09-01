@@ -11,7 +11,7 @@
 #      HTTPS lands on the unprivileged proxy (which never needs root / :443).
 #
 # dnsd itself must run with `--tls-redirect 127.0.0.1` so DANE names answer the
-# loopback A; and `pepenet-tls serve` must be running on <proxy-port>. This
+# loopback A; and `dogenet-tls serve` must be running on <proxy-port>. This
 # script wires the OS; it does not start those daemons.
 #
 # Usage:
@@ -67,11 +67,11 @@ fi
 # The unprivileged user we drop to for the login-keychain CA step.
 RUSER="${SUDO_USER:-$(id -un)}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BIN="$HERE/pepenet-tls"
+BIN="$HERE/dogenet-tls"
 
 RESOLVER="/etc/resolver/$TLD"
-PF_ANCHOR="/etc/pf.anchors/pepenet-tls-$TLD"
-PF_TOKEN="# pepenet-tls-$TLD"        # marker line we add to /etc/pf.conf
+PF_ANCHOR="/etc/pf.anchors/dogenet-$TLD"
+PF_TOKEN="# dogenet-$TLD"        # marker line we add to /etc/pf.conf
 
 pf_rule() {
     # rdr for locally-originated connections to 127.0.0.1:443 → the proxy port.
@@ -84,7 +84,7 @@ pf_rule() {
 # makes Firefox additionally trust roots from the OS keychain (where our .$TLD
 # root already lives). We write it to user.js (read at every startup, never
 # rewritten by Firefox — unlike prefs.js) in each profile, as the real user.
-FF_MARK="// pepenet-tls: trust macOS-keychain roots (incl. the .$TLD root CA)"
+FF_MARK="// dogenet-tls: trust macOS-keychain roots (incl. the .$TLD root CA)"
 FF_PREF='user_pref("security.enterprise_roots.enabled", true);'
 
 firefox_profiles() {
@@ -115,13 +115,13 @@ firefox_uninstall() {
         uj="${prof}user.js"
         [ -f "$uj" ] || continue
         # remove our marker line + the pref line that follows it
-        sudo -u "$RUSER" sed -i '' '/pepenet-tls: trust macOS-keychain roots/,+1d' "$uj" 2>/dev/null || true
+        sudo -u "$RUSER" sed -i '' '/dogenet-tls: trust macOS-keychain roots/,+1d' "$uj" 2>/dev/null || true
     done
     echo "   removed the enterprise-roots pref from Firefox profiles (restart Firefox)"
 }
 
 do_install() {
-    [ -x "$BIN" ] || { echo "build first: (cd $HERE && make pepenet-tls)"; exit 1; }
+    [ -x "$BIN" ] || { echo "build first: (cd $HERE && make dogenet-tls)"; exit 1; }
 
     echo "==> 1/4 trusting the name-constrained .$TLD root (as $RUSER; GUI auth expected)"
     sudo -u "$RUSER" "$BIN" --tld "$TLD" install-ca
@@ -135,8 +135,8 @@ do_install() {
     if ! grep -q "$PF_TOKEN" /etc/pf.conf; then
         {
             echo "$PF_TOKEN"
-            echo "rdr-anchor \"pepenet-tls-$TLD\""
-            echo "load anchor \"pepenet-tls-$TLD\" from \"$PF_ANCHOR\""
+            echo "rdr-anchor \"dogenet-$TLD\""
+            echo "load anchor \"dogenet-$TLD\" from \"$PF_ANCHOR\""
         } >> /etc/pf.conf
     fi
     # (re)load pf; -E enables it and keeps a token so we don't fight the firewall UI.

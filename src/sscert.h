@@ -8,13 +8,13 @@
  * Until now operators hand-rolled this with the openssl CLI (and LibreSSL vs
  * OpenSSL disagreements produced mismatched pins); this makes it one call.
  */
-#ifndef PEPENET_TLS_SSCERT_H
-#define PEPENET_TLS_SSCERT_H
+#ifndef DOGENET_TLS_SSCERT_H
+#define DOGENET_TLS_SSCERT_H
 
 #include <stdint.h>
 #include <stddef.h>
 
-/* Ensure the origin cert+key for `fqdn` (e.g. "pepenet.pepe") at the two paths:
+/* Ensure the origin cert+key for `fqdn` (e.g. "dogenet.pepe") at the two paths:
  * load if the pair exists, else generate + persist (EC P-256, ~10 y, key
  * 0600). SAN = fqdn, plus *.fqdn when `wildcard` — one cert for the apex and
  * every subdomain; without it the cert names the fqdn alone (subs get their
@@ -41,7 +41,7 @@ int sscert_wildcard(const char *crt_path);
  * chain name — we only ever read the public half, never the private key.
  *
  * Probe with the SAME SNI the proxy uses at runtime (the chain fqdn, e.g.
- * "pepenet.pepe"), so the pin matches exactly what proxy.c will see when it
+ * "dogenet.pepe"), so the pin matches exactly what proxy.c will see when it
  * dials the origin. If crt_path is non-NULL the leaf is saved there (PEM,
  * public cert only) so the SSL screen can list + re-pin it. subject/not_after
  * (optional) are filled for display. 1 on success, 0 on failure (err set). */

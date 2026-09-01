@@ -58,7 +58,7 @@
  * truncated (the SAN, which verifiers actually match on, is already correct).
  *
  * Hermetic: every root lives under a mkdtemp'd dir passed via ca_set_dir, and
- * $HOME is repointed as a belt-and-braces guard, so the real ~/.pepenet is
+ * $HOME is repointed as a belt-and-braces guard, so the real ~/.dogenet is
  * never read or written. No keychain, no network.
  */
 #include "ca.h"
@@ -135,13 +135,13 @@ static void sec_paths(void) {
     printf("\n── C2. cert/key path + CN derivation ──\n");
 
     ca_set_dir(g_tmp);
-    ca_set_name("pepenet");
+    ca_set_name("dogenet");
     ca_set_tld("doge");
 
     char want_crt[700], want_key[700], want_cn[128];
-    snprintf(want_crt, sizeof want_crt, "%s/pepenet-root-doge.crt", g_tmp);
-    snprintf(want_key, sizeof want_key, "%s/pepenet-root-doge.key", g_tmp);
-    snprintf(want_cn,  sizeof want_cn,  "pepenet .doge root CA");
+    snprintf(want_crt, sizeof want_crt, "%s/dogenet-root-doge.crt", g_tmp);
+    snprintf(want_key, sizeof want_key, "%s/dogenet-root-doge.key", g_tmp);
+    snprintf(want_cn,  sizeof want_cn,  "dogenet .doge root CA");
 
     CK(strcmp(ca_root_cert_path(), want_crt) == 0, "cert path = <dir>/<name>-root-<tld>.crt");
     CK(strcmp(ca_root_key_path(),  want_key) == 0, "key path  = <dir>/<name>-root-<tld>.key");
@@ -150,9 +150,9 @@ static void sec_paths(void) {
     /* changing the TLD *after* the paths were read must recompute them —
      * a stale path would point a pepe box at the doge network's root */
     ca_set_tld("pepe");
-    snprintf(want_crt, sizeof want_crt, "%s/pepenet-root-pepe.crt", g_tmp);
+    snprintf(want_crt, sizeof want_crt, "%s/dogenet-root-pepe.crt", g_tmp);
     CK(strcmp(ca_root_cert_path(), want_crt) == 0, "changing the TLD recomputes the cert path");
-    CK(strcmp(ca_root_cn(), "pepenet .pepe root CA") == 0, "... and the CN");
+    CK(strcmp(ca_root_cn(), "dogenet .pepe root CA") == 0, "... and the CN");
 
     ca_set_name("shibpost");
     snprintf(want_crt, sizeof want_crt, "%s/shibpost-root-pepe.crt", g_tmp);
@@ -160,7 +160,7 @@ static void sec_paths(void) {
     CK(strcmp(ca_root_cn(), "shibpost .pepe root CA") == 0, "... and the CN");
 
     /* a doge root and a pepe root never collide on disk */
-    ca_set_name("pepenet");
+    ca_set_name("dogenet");
     ca_set_tld("doge");
     char doge_crt[700];
     snprintf(doge_crt, sizeof doge_crt, "%s", ca_root_cert_path());
@@ -184,7 +184,7 @@ static void sec_injection(X509 *root, EVP_PKEY *rk) {
 
     /* THE attack the comment in ca.c:166 describes. */
     const char *ATTACKS[] = {
-        "evil.pepenet.doge,DNS:victim.example.com",
+        "evil.dogenet.doge,DNS:victim.example.com",
         "a.doge,DNS:www.google.com",
         "a.doge,IP:10.0.0.1",
         "a.doge,DNS:*",
@@ -259,7 +259,7 @@ static void sec_injection(X509 *root, EVP_PKEY *rk) {
 
         /* a realistic dotted hostname of the same shape fails identically */
         const char *real = "very-long-subdomain.another-long-label."
-                           "yet-another-label.pepenet.doge";           /* 69 bytes */
+                           "yet-another-label.dogenet.doge";           /* 69 bytes */
         leaf = NULL; lk = NULL;
         int rcreal = ca_leaf_mint(root, rk, real, &leaf, &lk);
         if (rcreal) { X509_free(leaf); EVP_PKEY_free(lk); }
@@ -274,7 +274,7 @@ static void sec_injection(X509 *root, EVP_PKEY *rk) {
     }
 
     /* legitimate shapes still mint */
-    const char *GOOD[] = { "www.pepenet.doge", "a.b.c.d.doge", "*.pepenet.doge",
+    const char *GOOD[] = { "www.dogenet.doge", "a.b.c.d.doge", "*.dogenet.doge",
                            "xn--brg-yoa.doge", "A.MIXED.Case.doge", "9lives.doge",
                            "has-a-hyphen.doge" };
     int all_minted = 1;
@@ -312,7 +312,7 @@ static char *leaf_san(X509 *leaf, int *count) {
 /* ── C4. the minted SAN is exactly what was asked for ───────────────────────── */
 static void sec_san_exact(X509 *root, EVP_PKEY *rk) {
     printf("\n── C4. the minted SAN is exactly the requested name ──\n");
-    const char *NAMES[] = { "www.pepenet.doge", "*.pepenet.doge", "a.b.c.d.e.doge" };
+    const char *NAMES[] = { "www.dogenet.doge", "*.dogenet.doge", "a.b.c.d.e.doge" };
     for (unsigned i = 0; i < sizeof NAMES / sizeof NAMES[0]; i++) {
         X509 *leaf = NULL; EVP_PKEY *lk = NULL;
         if (!ca_leaf_mint(root, rk, NAMES[i], &leaf, &lk)) { bad(NAMES[i]); continue; }
@@ -398,7 +398,7 @@ static void sec_leaf_shape(X509 *root, EVP_PKEY *rk) {
     printf("\n── C6. a leaf's shape ──\n");
 
     X509 *leaf = NULL; EVP_PKEY *lk = NULL;
-    if (!ca_leaf_mint(root, rk, "www.pepenet.doge", &leaf, &lk)) { bad("mint a leaf"); return; }
+    if (!ca_leaf_mint(root, rk, "www.dogenet.doge", &leaf, &lk)) { bad("mint a leaf"); return; }
 
     CK(X509_get_version(leaf) == 2, "leaf is X.509 v3");
     CK(X509_check_ca(leaf) == 0,    "leaf is NOT a CA (CA:FALSE — it can never act as an intermediate)");
@@ -455,7 +455,7 @@ static void sec_persist(void) {
     /* a leaf minted under the reloaded root still verifies under the first */
     if (r1 && r2 && k2) {
         X509 *leaf = NULL; EVP_PKEY *lk = NULL;
-        if (ca_leaf_mint(r2, k2, "reload.pepenet.doge", &leaf, &lk)) {
+        if (ca_leaf_mint(r2, k2, "reload.dogenet.doge", &leaf, &lk)) {
             X509_STORE *store = X509_STORE_new();
             X509_STORE_add_cert(store, r1);
             X509_STORE_CTX *ctx = X509_STORE_CTX_new();
@@ -479,7 +479,7 @@ static void sec_persist(void) {
     X509_free(r2); EVP_PKEY_free(k2);
     X509_free(r3); EVP_PKEY_free(k3);
     ca_set_tld("doge");
-    ca_set_name("pepenet");
+    ca_set_name("dogenet");
 }
 
 /* ── C8. serial entropy ─────────────────────────────────────────────────────── */
@@ -493,7 +493,7 @@ static void sec_serials(X509 *root, EVP_PKEY *rk) {
     for (int i = 0; i < N; i++) {
         X509 *leaf = NULL; EVP_PKEY *lk = NULL;
         char nm[64];
-        snprintf(nm, sizeof nm, "s%d.pepenet.doge", i);
+        snprintf(nm, sizeof nm, "s%d.dogenet.doge", i);
         if (!ca_leaf_mint(root, rk, nm, &leaf, &lk)) break;
         ser[minted] = ASN1_INTEGER_dup(X509_get_serialNumber(leaf));
         BIGNUM *bn = ASN1_INTEGER_to_BN(ser[minted], NULL);
@@ -514,11 +514,11 @@ static void sec_serials(X509 *root, EVP_PKEY *rk) {
 }
 
 int main(void) {
-    char tmpl[] = "/tmp/pepenet-tls-cadeep.XXXXXX";
+    char tmpl[] = "/tmp/dogenet-tls-cadeep.XXXXXX";
     char *dir = mkdtemp(tmpl);
     if (!dir) { perror("mkdtemp"); return 1; }
     snprintf(g_tmp, sizeof g_tmp, "%s", dir);
-    setenv("HOME", g_tmp, 1);            /* belt and braces: never ~/.pepenet */
+    setenv("HOME", g_tmp, 1);            /* belt and braces: never ~/.dogenet */
     printf("temp CA dir: %s\n", g_tmp);
 
     sec_tld();
@@ -526,7 +526,7 @@ int main(void) {
 
     /* one working root for the shape/injection sections */
     ca_set_dir(g_tmp);
-    ca_set_name("pepenet");
+    ca_set_name("dogenet");
     ca_set_tld("doge");
     X509 *root = NULL; EVP_PKEY *rk = NULL;
     if (!ca_root_ensure(&root, &rk)) {

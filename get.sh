@@ -1,31 +1,31 @@
 #!/bin/bash
 #
-# pepenet-tls installer — one command, macOS and Linux.
+# dogenet-tls installer — one command, macOS and Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/PepeNetWeb/pepenet-tls/main/get.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/DogeNetWeb/dogenet-tls/main/get.sh | bash
 #   curl -fsSL .../get.sh | bash -s -- --tld pepe
 #   curl -fsSL .../get.sh | bash -s -- uninstall
 #
-# Clones the family, builds dnsd + pepenet-tls, installs them as boot
+# Clones the family, builds dnsd + dogenet-tls, installs them as boot
 # daemons (systemd system units / LaunchDaemons — survive reboot and
 # logout), then elevates to plant the CA / split-DNS / :443 redirect.
 # install.sh by itself only does the OS half.
 #
-# Env: PEPENET_HOME (default ~/.pepenet), PEPENET_REF (default main),
-#      PEPENET_TLD (default pepe), PEPENET_PEER (comma-separated host:port;
-#      pep default pepenet.shibpost.com:33874,net.pepecoin.services:33874)
+# Env: DOGENET_HOME (default ~/.dogenet), DOGENET_REF (default main),
+#      DOGENET_TLD (default doge), DOGENET_PEER (comma-separated host:port;
+#      doge default dogenet.shibpost.com:22556)
 #
-# Windows: install.ps1 (irm … | iex) — pepenet-tls is POSIX; the padlock
-# there is pepenet-desktop.
+# Windows: install.ps1 (irm … | iex) — dogenet-tls is POSIX; the padlock
+# there is dogenet-desktop.
 
 set -euo pipefail
 
-ORG="${PEPENET_ORG:-PepeNetWeb}"
-REF="${PEPENET_REF:-main}"
-HOME_DIR="${PEPENET_HOME:-$HOME/.pepenet}"
-TLD="${PEPENET_TLD:-pepe}"
-PEER="${PEPENET_PEER:-}"
-COIN="pep"
+ORG="${DOGENET_ORG:-DogeNetWeb}"
+REF="${DOGENET_REF:-main}"
+HOME_DIR="${DOGENET_HOME:-$HOME/.dogenet}"
+TLD="${DOGENET_TLD:-doge}"
+PEER="${DOGENET_PEER:-}"
+COIN="doge"
 DNS_PORT=15353
 PROXY_PORT=8443
 SRC="$HOME_DIR/src"
@@ -47,8 +47,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 case "$TLD" in
-    pepe) COIN=pep;  PEER="${PEER:-pepenet.shibpost.com:33874,net.pepecoin.services:33874}" ;;
-    doge) COIN=doge; PEER="${PEER:-pepenet.shibpost.com:22556}" ;;
+    pepe) COIN=pep;  PEER="${PEER:-dogenet.shibpost.com:33874,net.pepecoin.services:33874}" ;;
+    doge) COIN=doge; PEER="${PEER:-dogenet.shibpost.com:22556}" ;;
     *) echo "TLD must be pepe or doge" >&2; exit 2 ;;
 esac
 
@@ -57,9 +57,9 @@ case "$os" in
     Darwin) os=macos ;;
     Linux)  os=linux ;;
     MINGW*|MSYS*|CYGWIN*)
-        echo "pepenet-tls is POSIX. On Windows:" >&2
-        echo "  PowerShell:  irm https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/install.ps1 | iex" >&2
-        echo "  cmd.exe:     powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/install.ps1 | iex\"" >&2
+        echo "dogenet-tls is POSIX. On Windows:" >&2
+        echo "  PowerShell:  irm https://raw.githubusercontent.com/$ORG/dogenet-tls/$REF/install.ps1 | iex" >&2
+        echo "  cmd.exe:     powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/$ORG/dogenet-tls/$REF/install.ps1 | iex\"" >&2
         exit 1 ;;
     *) echo "unsupported OS: $os" >&2; exit 1 ;;
 esac
@@ -126,7 +126,7 @@ ensure_deps() {
 # Boot daemons, not login agents: they come up at startup without a
 # session, keep running after logout, and restart if they die. The
 # process still runs as the installing user (the proxy is loopback-only
-# and must not be root). HOME is pinned so ~/.pepenet CA files resolve.
+# and must not be root). HOME is pinned so ~/.dogenet CA files resolve.
 install_file() {
     local src="$1" dest="$2"
     elevate cp "$src" "$dest"
@@ -144,9 +144,9 @@ write_linux_units() {
         flags="$flags --peer $p"
     done
     unset IFS
-    cat > "$tmp/pepenet-dnsd.service" <<EOF
+    cat > "$tmp/dogenet-dnsd.service" <<EOF
 [Unit]
-Description=PepeNet DNS resolver (.$TLD)
+Description=DogeNet DNS resolver (.$TLD)
 After=network-online.target
 Wants=network-online.target
 
@@ -163,11 +163,11 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-    cat > "$tmp/pepenet-tls.service" <<EOF
+    cat > "$tmp/dogenet-tls.service" <<EOF
 [Unit]
-Description=PepeNet DANE TLS proxy (.$TLD)
-After=network-online.target pepenet-dnsd.service
-Wants=network-online.target pepenet-dnsd.service
+Description=DogeNet DANE TLS proxy (.$TLD)
+After=network-online.target dogenet-dnsd.service
+Wants=network-online.target dogenet-dnsd.service
 
 [Service]
 Type=simple
@@ -175,7 +175,7 @@ User=$user
 Group=$gid
 Environment=HOME=$HOME
 WorkingDirectory=$HOME_DIR
-ExecStart=$BIN_DIR/pepenet-tls --tld $TLD serve --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --listen 127.0.0.1 --port $PROXY_PORT
+ExecStart=$BIN_DIR/dogenet-tls --tld $TLD serve --db $HOME_DIR/$COIN.db --store $HOME_DIR/dns-$COIN.db --listen 127.0.0.1 --port $PROXY_PORT
 Restart=always
 RestartSec=5
 
@@ -183,12 +183,12 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
     # drop a leftover user-unit from the first installer, if any
-    systemctl --user disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
-    install_file "$tmp/pepenet-dnsd.service" /etc/systemd/system/pepenet-dnsd.service
-    install_file "$tmp/pepenet-tls.service"  /etc/systemd/system/pepenet-tls.service
+    systemctl --user disable --now dogenet-tls.service dogenet-dnsd.service >/dev/null 2>&1 || true
+    install_file "$tmp/dogenet-dnsd.service" /etc/systemd/system/dogenet-dnsd.service
+    install_file "$tmp/dogenet-tls.service"  /etc/systemd/system/dogenet-tls.service
     rm -rf "$tmp"
     elevate systemctl daemon-reload
-    elevate systemctl enable --now pepenet-dnsd.service pepenet-tls.service
+    elevate systemctl enable --now dogenet-dnsd.service dogenet-tls.service
 }
 
 macos_plist() {
@@ -227,53 +227,53 @@ write_macos_agents() {
         dnsd_args+=( --peer "$p" )
     done
     unset IFS
-    macos_plist com.pepenet.dnsd "$HOME_DIR/dnsd.log" \
+    macos_plist com.dogenet.dnsd "$HOME_DIR/dnsd.log" \
         "${dnsd_args[@]}" \
-        > "$tmp/com.pepenet.dnsd.plist"
-    macos_plist com.pepenet.tls "$HOME_DIR/tls.log" \
-        "$BIN_DIR/pepenet-tls" --tld "$TLD" serve \
+        > "$tmp/com.dogenet.dnsd.plist"
+    macos_plist com.dogenet.tls "$HOME_DIR/tls.log" \
+        "$BIN_DIR/dogenet-tls" --tld "$TLD" serve \
         --db "$HOME_DIR/$COIN.db" --store "$HOME_DIR/dns-$COIN.db" \
         --listen 127.0.0.1 --port "$PROXY_PORT" \
-        > "$tmp/com.pepenet.tls.plist"
+        > "$tmp/com.dogenet.tls.plist"
     # retire the login-only LaunchAgents from the first installer
-    launchctl bootout "gui/$(id -u)/com.pepenet.dnsd" >/dev/null 2>&1 || true
-    launchctl bootout "gui/$(id -u)/com.pepenet.tls" >/dev/null 2>&1 || true
-    rm -f "$HOME/Library/LaunchAgents/com.pepenet.dnsd.plist" \
-          "$HOME/Library/LaunchAgents/com.pepenet.tls.plist"
-    install_file "$tmp/com.pepenet.dnsd.plist" /Library/LaunchDaemons/com.pepenet.dnsd.plist
-    install_file "$tmp/com.pepenet.tls.plist"  /Library/LaunchDaemons/com.pepenet.tls.plist
-    elevate launchctl bootout system/com.pepenet.dnsd >/dev/null 2>&1 || true
-    elevate launchctl bootout system/com.pepenet.tls >/dev/null 2>&1 || true
-    elevate launchctl bootstrap system /Library/LaunchDaemons/com.pepenet.dnsd.plist
-    elevate launchctl bootstrap system /Library/LaunchDaemons/com.pepenet.tls.plist
+    launchctl bootout "gui/$(id -u)/com.dogenet.dnsd" >/dev/null 2>&1 || true
+    launchctl bootout "gui/$(id -u)/com.dogenet.tls" >/dev/null 2>&1 || true
+    rm -f "$HOME/Library/LaunchAgents/com.dogenet.dnsd.plist" \
+          "$HOME/Library/LaunchAgents/com.dogenet.tls.plist"
+    install_file "$tmp/com.dogenet.dnsd.plist" /Library/LaunchDaemons/com.dogenet.dnsd.plist
+    install_file "$tmp/com.dogenet.tls.plist"  /Library/LaunchDaemons/com.dogenet.tls.plist
+    elevate launchctl bootout system/com.dogenet.dnsd >/dev/null 2>&1 || true
+    elevate launchctl bootout system/com.dogenet.tls >/dev/null 2>&1 || true
+    elevate launchctl bootstrap system /Library/LaunchDaemons/com.dogenet.dnsd.plist
+    elevate launchctl bootstrap system /Library/LaunchDaemons/com.dogenet.tls.plist
 }
 
 stop_services() {
     if [ "$os" = linux ]; then
-        elevate systemctl disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
-        elevate rm -f /etc/systemd/system/pepenet-tls.service /etc/systemd/system/pepenet-dnsd.service
+        elevate systemctl disable --now dogenet-tls.service dogenet-dnsd.service >/dev/null 2>&1 || true
+        elevate rm -f /etc/systemd/system/dogenet-tls.service /etc/systemd/system/dogenet-dnsd.service
         elevate systemctl daemon-reload >/dev/null 2>&1 || true
-        systemctl --user disable --now pepenet-tls.service pepenet-dnsd.service >/dev/null 2>&1 || true
+        systemctl --user disable --now dogenet-tls.service dogenet-dnsd.service >/dev/null 2>&1 || true
     else
-        elevate launchctl bootout system/com.pepenet.tls >/dev/null 2>&1 || true
-        elevate launchctl bootout system/com.pepenet.dnsd >/dev/null 2>&1 || true
-        elevate rm -f /Library/LaunchDaemons/com.pepenet.tls.plist \
-                      /Library/LaunchDaemons/com.pepenet.dnsd.plist
-        launchctl bootout "gui/$(id -u)/com.pepenet.tls" >/dev/null 2>&1 || true
-        launchctl bootout "gui/$(id -u)/com.pepenet.dnsd" >/dev/null 2>&1 || true
-        rm -f "$HOME/Library/LaunchAgents/com.pepenet.tls.plist" \
-              "$HOME/Library/LaunchAgents/com.pepenet.dnsd.plist"
+        elevate launchctl bootout system/com.dogenet.tls >/dev/null 2>&1 || true
+        elevate launchctl bootout system/com.dogenet.dnsd >/dev/null 2>&1 || true
+        elevate rm -f /Library/LaunchDaemons/com.dogenet.tls.plist \
+                      /Library/LaunchDaemons/com.dogenet.dnsd.plist
+        launchctl bootout "gui/$(id -u)/com.dogenet.tls" >/dev/null 2>&1 || true
+        launchctl bootout "gui/$(id -u)/com.dogenet.dnsd" >/dev/null 2>&1 || true
+        rm -f "$HOME/Library/LaunchAgents/com.dogenet.tls.plist" \
+              "$HOME/Library/LaunchAgents/com.dogenet.dnsd.plist"
     fi
 }
 
 do_uninstall() {
     log "stopping daemons"
     stop_services
-    if [ -x "$SRC/pepenet-tls/install.sh" ]; then
+    if [ -x "$SRC/dogenet-tls/install.sh" ]; then
         log "removing OS wiring (CA / DNS / redirect)"
-        elevate "$SRC/pepenet-tls/install.sh" uninstall "$TLD" || true
+        elevate "$SRC/dogenet-tls/install.sh" uninstall "$TLD" || true
     fi
-    rm -f "$BIN_DIR/dnsd" "$BIN_DIR/pepenet-tls"
+    rm -f "$BIN_DIR/dnsd" "$BIN_DIR/dogenet-tls"
     log "left $HOME_DIR (chain db, zone store, source). rm -rf $HOME_DIR to wipe."
 }
 
@@ -283,32 +283,32 @@ do_setup() {
 
     clone_or_update "$GH/namespace-indexer.git"  "$SRC/namespace-indexer" --recursive
     clone_or_update "$GH/namespace-protocol.git" "$SRC/namespace-protocol"
-    clone_or_update "$GH/pepenet-mesh.git"       "$SRC/pepenet-mesh"
-    clone_or_update "$GH/pepenet-dns.git"        "$SRC/pepenet-dns"
-    clone_or_update "$GH/pepenet-tls.git"        "$SRC/pepenet-tls"
+    clone_or_update "$GH/dogenet-mesh.git"       "$SRC/dogenet-mesh"
+    clone_or_update "$GH/dogenet-dns.git"        "$SRC/dogenet-dns"
+    clone_or_update "$GH/dogenet-tls.git"        "$SRC/dogenet-tls"
 
     # glibc + -std=c11 hides mkdtemp/fdopen; mesh pins _DEFAULT_SOURCE.
     # Harmless elsewhere.
     local posix="-std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra"
-    log "building mesh (libsecp + libpepenetnet.a)"
-    make -C "$SRC/pepenet-mesh" CFLAGS="$posix -Wshadow" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+    log "building mesh (libsecp + libdogenetnet.a)"
+    make -C "$SRC/dogenet-mesh" CFLAGS="$posix -Wshadow" -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
     log "building dnsd"
-    make -C "$SRC/pepenet-dns" CFLAGS="$posix -Wshadow" dnsd
-    log "building pepenet-tls"
+    make -C "$SRC/dogenet-dns" CFLAGS="$posix -Wshadow" dnsd
+    log "building dogenet-tls"
     if [ "$os" = macos ]; then
-        make -C "$SRC/pepenet-tls" pepenet-tls
+        make -C "$SRC/dogenet-tls" dogenet-tls
     else
-        make -C "$SRC/pepenet-tls" CFLAGS="$posix $(pkg-config --cflags openssl)" pepenet-tls
+        make -C "$SRC/dogenet-tls" CFLAGS="$posix $(pkg-config --cflags openssl)" dogenet-tls
     fi
 
-    cp -f "$SRC/pepenet-dns/dnsd" "$BIN_DIR/dnsd"
-    cp -f "$SRC/pepenet-tls/pepenet-tls" "$BIN_DIR/pepenet-tls"
-    chmod +x "$BIN_DIR/dnsd" "$BIN_DIR/pepenet-tls"
+    cp -f "$SRC/dogenet-dns/dnsd" "$BIN_DIR/dnsd"
+    cp -f "$SRC/dogenet-tls/dogenet-tls" "$BIN_DIR/dogenet-tls"
+    chmod +x "$BIN_DIR/dnsd" "$BIN_DIR/dogenet-tls"
 
     log "ensuring the name-constrained .$TLD root"
-    "$BIN_DIR/pepenet-tls" --tld "$TLD" gen-ca
+    "$BIN_DIR/dogenet-tls" --tld "$TLD" gen-ca
 
-    log "installing boot daemons (dnsd + pepenet-tls — Restart=always, survive reboot)"
+    log "installing boot daemons (dnsd + dogenet-tls — Restart=always, survive reboot)"
     if [ "$os" = linux ]; then
         write_linux_units
     else
@@ -316,7 +316,7 @@ do_setup() {
     fi
 
     log "planting OS trust / DNS / :443 redirect (sudo/pkexec)"
-    elevate "$SRC/pepenet-tls/install.sh" install "$TLD"
+    elevate "$SRC/dogenet-tls/install.sh" install "$TLD"
 
     cat <<EOF
 
@@ -328,7 +328,7 @@ do_setup() {
   binaries  $BIN_DIR
 
 Open https://<name>.$TLD in a browser (quit+reopen Firefox if you use it).
-Uninstall:  curl -fsSL https://raw.githubusercontent.com/$ORG/pepenet-tls/$REF/get.sh | bash -s -- uninstall
+Uninstall:  curl -fsSL https://raw.githubusercontent.com/$ORG/dogenet-tls/$REF/get.sh | bash -s -- uninstall
 EOF
 }
 

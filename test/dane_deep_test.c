@@ -174,7 +174,7 @@ static void hexdump(const uint8_t *p, int n, char *out) {
 
 /* ── the test ─────────────────────────────────────────────────────────────── */
 
-static const char *NAME = "www.pepenet.doge";
+static const char *NAME = "www.dogenet.doge";
 
 int main(void) {
     signal(SIGPIPE, SIG_IGN);

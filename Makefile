@@ -1,4 +1,4 @@
-# pepenet-tls — DANE-enforcing local TLS proxy for .doge/.pepe (see DESIGN.md).
+# dogenet-tls — DANE-enforcing local TLS proxy for .doge/.pepe (see DESIGN.md).
 #
 # Slice 1: the name-constrained root CA + trust install + the NameConstraints
 # accept/reject proof (`make test`).
@@ -26,13 +26,13 @@ CFLAGS  ?= -std=c11 -D_DEFAULT_SOURCE -O2 -Wall -Wextra $(PKG_OPENSSL_CFLAGS)
 LDFLAGS ?= $(PKG_OPENSSL_LIBS)
 endif
 
-# The resolver (slice 4) reuses pepenet-dns's record store + ownership oracle,
+# The resolver (slice 4) reuses dogenet-dns's record store + ownership oracle,
 # exactly as dnsd links them.
 #
 # Two layouts:
-#   family siblings  pepenet-tls/ next to pepenet-dns/, pepenet-mesh/,
+#   family siblings  dogenet-tls/ next to dogenet-dns/, dogenet-mesh/,
 #                    namespace-indexer/  (the standalone clone)
-#   desktop embed    this Makefile lives at pepenet-desktop/tls/ and those
+#   desktop embed    this Makefile lives at dogenet-desktop/tls/ and those
 #                    three are submodules named dns/, mesh/, indexer/
 # Override any of DNS / IDX / NET if yours live elsewhere.
 ifneq ($(wildcard ../dns/src/dns_state.c),)
@@ -40,12 +40,12 @@ DNS     ?= ../dns
 IDX     ?= ../indexer
 NET     ?= ../mesh
 else
-DNS     ?= ../pepenet-dns
+DNS     ?= ../dogenet-dns
 IDX     ?= $(DNS)/../namespace-indexer
-NET     ?= $(DNS)/../pepenet-mesh
+NET     ?= $(DNS)/../dogenet-mesh
 endif
 SECPLIB := $(IDX)/build/secp/lib/libsecp256k1.a
-NETLIB  := $(NET)/libpepenetnet.a
+NETLIB  := $(NET)/libdogenetnet.a
 
 CC      ?= cc
 
@@ -56,11 +56,11 @@ DNSSRC  := $(DNS)/src/dns_state.c $(DNS)/src/dns_chain.c $(DNS)/src/zone.c \
            $(DNS)/src/dns_wire.c
 DNSLIBS := $(NETLIB) $(SECPLIB) -lsqlite3
 
-all: pepenet-tls ca_test dane_test proxy_test origin_test sscert_test
+all: dogenet-tls ca_test dane_test proxy_test origin_test sscert_test
 
 # the full binary: CLI + CA + trust + proxy + live resolver (reuses the DNS
 # record store + ownership oracle, exactly as dnsd links them).
-pepenet-tls: src/main.c src/ca.c src/trust.c src/proxy.c src/dane.c src/resolve.c src/origin.c src/sscert.c $(DNSSRC) $(NETLIB)
+dogenet-tls: src/main.c src/ca.c src/trust.c src/proxy.c src/dane.c src/resolve.c src/origin.c src/sscert.c $(DNSSRC) $(NETLIB)
 	$(CC) $(CFLAGS) -Isrc $(DNSINC) -o $@ src/main.c src/ca.c src/trust.c src/proxy.c \
 	    src/dane.c src/resolve.c src/origin.c src/sscert.c $(DNSSRC) $(LDFLAGS) $(DNSLIBS) -lpthread
 
@@ -99,7 +99,7 @@ test: ca_test dane_test proxy_test origin_test sscert_test
 	./sscert_test
 
 clean:
-	rm -f pepenet-tls ca_test dane_test proxy_test origin_test sscert_test ca_deep_test
+	rm -f dogenet-tls ca_test dane_test proxy_test origin_test sscert_test ca_deep_test
 
 .PHONY: all test clean
 
@@ -143,7 +143,7 @@ check-deep: dane_deep_test fetch_test resolve_test ca_deep_test
 	else echo "check-deep: at least one suite FAILED (see the FAILS: notes)"; fi; \
 	exit $$rc
 
-# the concurrency/abuse suite (~30 s). PEPENET_JITTER_SEED=<n> replays a run.
+# the concurrency/abuse suite (~30 s). DOGENET_JITTER_SEED=<n> replays a run.
 check-jitter: proxy_jitter_test
 	./proxy_jitter_test
 

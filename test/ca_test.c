@@ -11,7 +11,7 @@
  * leaf at all.
  *
  * Hermetic: points $HOME at a temp dir so it never touches the real
- * ~/.pepenet root. No keychain, no network — safe to run unattended.
+ * ~/.dogenet root. No keychain, no network — safe to run unattended.
  */
 #include "ca.h"
 
@@ -83,21 +83,21 @@ static void prove_tld(const char *tld, const char *mine, const char *other) {
     ok("root generated + persisted");
 
     char buf[64];
-    snprintf(buf, sizeof buf, "www.pepenet.%s", mine);  check(root, rk, buf, 1);
+    snprintf(buf, sizeof buf, "www.dogenet.%s", mine);  check(root, rk, buf, 1);
     snprintf(buf, sizeof buf, "a.b.c.%s", mine);        check(root, rk, buf, 1);
-    snprintf(buf, sizeof buf, "pepenet.%s", other);     check(root, rk, buf, 0);  /* other TLD */
+    snprintf(buf, sizeof buf, "dogenet.%s", other);     check(root, rk, buf, 0);  /* other TLD */
     check(root, rk, "evil.com",              0);
     check(root, rk, "www.google.com",        0);
     snprintf(buf, sizeof buf, "not%s", mine);           check(root, rk, buf, 0);  /* dotless near-miss */
-    snprintf(buf, sizeof buf, "pepenet.%s.evil.com", mine); check(root, rk, buf, 0);
+    snprintf(buf, sizeof buf, "dogenet.%s.evil.com", mine); check(root, rk, buf, 0);
 
     X509_free(root); EVP_PKEY_free(rk);
 }
 
 int main(void) {
-    /* Hermetic HOME so we never touch the real ~/.pepenet. Per-TLD filenames
+    /* Hermetic HOME so we never touch the real ~/.dogenet. Per-TLD filenames
      * mean both roots coexist in the same temp dir without collision. */
-    char tmpl[] = "/tmp/pepenet-tls-catest.XXXXXX";
+    char tmpl[] = "/tmp/dogenet-tls-catest.XXXXXX";
     char *home = mkdtemp(tmpl);
     if (!home) { perror("mkdtemp"); return 1; }
     setenv("HOME", home, 1);

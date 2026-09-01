@@ -1,4 +1,4 @@
-/* trust.h — install / remove the pepenet root in the OS *user* trust store.
+/* trust.h — install / remove the dogenet root in the OS *user* trust store.
  *
  * macOS: login keychain via `security`; the GUI auth prompt IS the operator's
  * deliberate consent to trust the `.doge`/`.pepe` root (DESIGN.md §2).
@@ -9,8 +9,8 @@
  * card is consent. `certutil` missing is not a hard failure for curl (p11-kit
  * system store), but Snap Chromium/Firefox will show CERT_AUTHORITY_INVALID.
  */
-#ifndef PEPENET_TLS_TRUST_H
-#define PEPENET_TLS_TRUST_H
+#ifndef DOGENET_TLS_TRUST_H
+#define DOGENET_TLS_TRUST_H
 
 /* Install `certpath` (PEM) as a trusted root in the user store. 1 on success. */
 int trust_install(const char *certpath);

@@ -6,8 +6,8 @@
  * SNI, and every upstream byte arrives pin-checked by the same code the
  * browser path uses. Used for Discover's favicon fetch; small bodies only.
  */
-#ifndef PEPENET_TLS_FETCH_H
-#define PEPENET_TLS_FETCH_H
+#ifndef DOGENET_TLS_FETCH_H
+#define DOGENET_TLS_FETCH_H
 
 #include <stddef.h>
 #include <stdint.h>

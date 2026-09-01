@@ -6,8 +6,8 @@
  * audited code rather than a hand-rolled comparison. DANE-EE (usage 3) needs no
  * CA chain — the chain-published key hash IS the trust anchor.
  */
-#ifndef PEPENET_TLS_DANE_H
-#define PEPENET_TLS_DANE_H
+#ifndef DOGENET_TLS_DANE_H
+#define DOGENET_TLS_DANE_H
 
 #include <stdint.h>
 #include <stddef.h>
